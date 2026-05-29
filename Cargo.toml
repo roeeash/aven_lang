@@ -1,0 +1,15 @@
+[package]
+name = "aven-seed"
+version = "0.1.0"
+edition = "2021"
+
+[[bin]]
+name = "aven"
+path = "src/main.rs"
+
+[dependencies]
+serde_json = "1"
+chrono = { version = "0.4", features = ["std"] }
+ureq = "2"
+
+[dev-dependencies]
