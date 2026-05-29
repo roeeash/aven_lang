@@ -175,15 +175,17 @@ This is the **AVEN seed interpreter** — Milestone 1 of 7, written in Rust.
 
 | Milestone | Status | What lands |
 |---|---|---|
-| **M1 — Core interpreter** | ✅ This repo | Lex, parse, eval, `verify` CLI, `@uncertain`/`@intent` as AST nodes |
-| **M2 — Type system** | Planned | Full bidirectional type checker; effect arrows (`->` / `-!>` / `-~>`) |
-| **M3 — Control flow** | Planned | `@match`, `@err`, typed `#ok \| #err` results |
-| **M4 — Module system** | Planned | `@mod`, `@use`, capability verification at import boundaries |
-| **M5 — `@diff` engine** | Planned | Selector-addressed AST patches; `.avenpatch` files; atomic batch diffs |
-| **M6 — Stdlib** | Planned | `aven/std/io`, `fs`, `http`, `json`, `math`, `collections` |
-| **M7 — Self-hosting prep** | Planned | Span-aware errors, full spec coverage |
+| **M1 — Core interpreter** | ✅ Complete | Lex, parse, eval, source spans, `NodeId`, `verify` CLI, `@uncertain`/`@intent` as AST nodes |
+| **M2 — Type system** | ✅ Complete | Bidirectional type checker, orthogonal `EffectSet`, 8 effect arrows, `@cap` markers, capability gating stubs |
+| **M3 — Control flow** | ✅ Complete | `@match` with pattern binding, `@err` values, typed `#ok \| #err` results, `@intent` indexing |
+| **M4 — Module system** | ✅ Complete | `@mod`, `@use`, `@pub`, capability verification, DAG cycle detection, topo-ordered type checking, real `@ctx` API |
+| **M5 — `@diff` engine** | ✅ Complete | Selector-addressed AST patches (`@replace`/`@insert`/`@delete`/`@move`/`@copy`), `@diffs` atomic batch with rollback, `@meta` blocks, `.avenpatch` serialization |
+| **M6 — Stdlib** | ✅ Complete | `aven/std/io`, `fs`, `http`, `json`, `math`, `time`, `str`, `collections` — 8 modules, all as `NativeFn` closures |
+| **M7 — Self-hosting prep** | ✅ Complete | Span-aware errors, `aven fmt`, `aven repl`, full spec coverage audit, non-trivial AVEN program, `@uncertain` deploy blocker, `@intent` index dump |
 
-See [ROADMAP.md](ROADMAP.md) for detail and [AVEN_SPEC.md](AVEN_SPEC.md) for the full language specification.
+**All M1–M7 milestones are complete.** 436+ tests passing, zero warnings. The seed interpreter is stable; Stage 2 (self-hosted AVEN compiler written in AVEN) is the next horizon.
+
+See [ROADMAP.md](ROADMAP.md) for the full milestone log and [AVEN_SPEC.md](AVEN_SPEC.md) for the language specification.
 
 ---
 
