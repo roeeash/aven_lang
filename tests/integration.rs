@@ -3613,6 +3613,171 @@ fn test_str_eq_not() {
     assert_eq!(result, Value::Bool(false));
 }
 
+// Integer comparison builtin tests
+#[test]
+fn test_builtin_int_eq_true() {
+    let result = run_str("(@call int_eq 42 42)").unwrap();
+    assert_eq!(result, Value::Bool(true));
+}
+
+#[test]
+fn test_builtin_int_eq_false() {
+    let result = run_str("(@call int_eq 42 0)").unwrap();
+    assert_eq!(result, Value::Bool(false));
+}
+
+#[test]
+fn test_builtin_int_lt_true() {
+    let result = run_str("(@call int_lt 3 5)").unwrap();
+    assert_eq!(result, Value::Bool(true));
+}
+
+#[test]
+fn test_builtin_int_lt_false() {
+    let result = run_str("(@call int_lt 5 3)").unwrap();
+    assert_eq!(result, Value::Bool(false));
+}
+
+#[test]
+fn test_builtin_int_gt_true() {
+    let result = run_str("(@call int_gt 5 3)").unwrap();
+    assert_eq!(result, Value::Bool(true));
+}
+
+#[test]
+fn test_builtin_int_gt_false() {
+    let result = run_str("(@call int_gt 3 5)").unwrap();
+    assert_eq!(result, Value::Bool(false));
+}
+
+#[test]
+fn test_builtin_int_le_true() {
+    let result = run_str("(@call int_le 5 5)").unwrap();
+    assert_eq!(result, Value::Bool(true));
+}
+
+#[test]
+fn test_builtin_int_le_false() {
+    let result = run_str("(@call int_le 6 5)").unwrap();
+    assert_eq!(result, Value::Bool(false));
+}
+
+#[test]
+fn test_builtin_int_ge_false() {
+    let result = run_str("(@call int_ge 3 5)").unwrap();
+    assert_eq!(result, Value::Bool(false));
+}
+
+#[test]
+fn test_builtin_int_ge_true() {
+    let result = run_str("(@call int_ge 5 5)").unwrap();
+    assert_eq!(result, Value::Bool(true));
+}
+
+#[test]
+fn test_builtin_int_eq_type_error() {
+    let result = run_str("(@call int_eq 1 \"x\")");
+    assert!(result.is_err());
+}
+
+// Boolean logic builtin tests
+#[test]
+fn test_builtin_bool_and_true() {
+    let result = run_str("(@call bool_and @true @true)").unwrap();
+    assert_eq!(result, Value::Bool(true));
+}
+
+#[test]
+fn test_builtin_bool_and_false() {
+    let result = run_str("(@call bool_and @true @false)").unwrap();
+    assert_eq!(result, Value::Bool(false));
+}
+
+#[test]
+fn test_builtin_bool_or_true() {
+    let result = run_str("(@call bool_or @false @true)").unwrap();
+    assert_eq!(result, Value::Bool(true));
+}
+
+#[test]
+fn test_builtin_bool_or_false() {
+    let result = run_str("(@call bool_or @false @false)").unwrap();
+    assert_eq!(result, Value::Bool(false));
+}
+
+#[test]
+fn test_builtin_bool_not_true() {
+    let result = run_str("(@call bool_not @true)").unwrap();
+    assert_eq!(result, Value::Bool(false));
+}
+
+#[test]
+fn test_builtin_bool_not_false() {
+    let result = run_str("(@call bool_not @false)").unwrap();
+    assert_eq!(result, Value::Bool(true));
+}
+
+#[test]
+fn test_builtin_bool_and_type_error() {
+    let result = run_str("(@call bool_and @true 1)");
+    assert!(result.is_err());
+}
+
+// String ordering builtin tests
+#[test]
+fn test_builtin_str_lt_true() {
+    let result = run_str("(@call str_lt \"a\" \"b\")").unwrap();
+    assert_eq!(result, Value::Bool(true));
+}
+
+#[test]
+fn test_builtin_str_lt_false() {
+    let result = run_str("(@call str_lt \"b\" \"a\")").unwrap();
+    assert_eq!(result, Value::Bool(false));
+}
+
+#[test]
+fn test_builtin_str_gt_true() {
+    let result = run_str("(@call str_gt \"z\" \"a\")").unwrap();
+    assert_eq!(result, Value::Bool(true));
+}
+
+#[test]
+fn test_builtin_str_gt_false() {
+    let result = run_str("(@call str_gt \"a\" \"z\")").unwrap();
+    assert_eq!(result, Value::Bool(false));
+}
+
+#[test]
+fn test_builtin_str_le_true() {
+    let result = run_str("(@call str_le \"a\" \"a\")").unwrap();
+    assert_eq!(result, Value::Bool(true));
+}
+
+#[test]
+fn test_builtin_str_le_false() {
+    let result = run_str("(@call str_le \"z\" \"a\")").unwrap();
+    assert_eq!(result, Value::Bool(false));
+}
+
+#[test]
+fn test_builtin_str_ge_true() {
+    let result = run_str("(@call str_ge \"z\" \"z\")").unwrap();
+    assert_eq!(result, Value::Bool(true));
+}
+
+#[test]
+fn test_builtin_str_ge_false() {
+    let result = run_str("(@call str_ge \"a\" \"z\")").unwrap();
+    assert_eq!(result, Value::Bool(false));
+}
+
+#[test]
+fn test_builtin_str_lt_type_error() {
+    let result = run_str("(@call str_lt \"a\" 1)");
+    assert!(result.is_err());
+}
+
 // ===== JSON parser written in AVEN =====
 //
 // Uses str_find to avoid recursion (recursive function calls are broken
@@ -5947,4 +6112,191 @@ fn test_verify_binary_file_not_found() {
     let stderr_str = String::from_utf8_lossy(&output.stderr);
     assert_eq!(output.status.code(), Some(1), "Exit code should be 1");
     assert!(stderr_str.contains("Error reading file"), "stderr should contain error message");
+}
+
+#[test]
+fn test_emit_tokens_simple_integer() {
+    let tokens = aven_seed::emit_tokens_str("42");
+    assert_eq!(tokens.len(), 2);
+    match &tokens[0] {
+        aven_seed::Token::Integer(42) => {},
+        _ => panic!("Expected Integer(42), got {:?}", tokens[0]),
+    }
+    match &tokens[1] {
+        aven_seed::Token::Eof => {},
+        _ => panic!("Expected Eof, got {:?}", tokens[1]),
+    }
+}
+
+#[test]
+fn test_emit_tokens_let_binding() {
+    let tokens = aven_seed::emit_tokens_str("@let x :: 10");
+    let mut found_let = false;
+    let mut found_ident = false;
+    let mut found_colon = false;
+    let mut found_integer = false;
+    for token in &tokens {
+        match token {
+            aven_seed::Token::Let => found_let = true,
+            aven_seed::Token::Ident(s) if s == "x" => found_ident = true,
+            aven_seed::Token::DoubleColon => found_colon = true,
+            aven_seed::Token::Integer(10) => found_integer = true,
+            _ => {},
+        }
+    }
+    assert!(found_let, "Expected Let token");
+    assert!(found_ident, "Expected Ident('x') token");
+    assert!(found_colon, "Expected DoubleColon token");
+    assert!(found_integer, "Expected Integer(10) token");
+}
+
+#[test]
+fn test_emit_tokens_arithmetic() {
+    let tokens = aven_seed::emit_tokens_str("(+ 2 3)");
+    assert!(tokens.len() >= 5);
+    let mut idx = 0;
+    match &tokens[idx] {
+        aven_seed::Token::LeftParen => idx += 1,
+        _ => panic!("Expected LeftParen at position {}", idx),
+    }
+    match &tokens[idx] {
+        aven_seed::Token::Plus => idx += 1,
+        _ => panic!("Expected Plus at position {}", idx),
+    }
+    match &tokens[idx] {
+        aven_seed::Token::Integer(2) => idx += 1,
+        _ => panic!("Expected Integer(2) at position {}", idx),
+    }
+    match &tokens[idx] {
+        aven_seed::Token::Integer(3) => idx += 1,
+        _ => panic!("Expected Integer(3) at position {}", idx),
+    }
+    match &tokens[idx] {
+        aven_seed::Token::RightParen => {},
+        _ => panic!("Expected RightParen at position {}", idx),
+    }
+}
+
+#[test]
+fn test_emit_ast_simple_integer() {
+    let expr = aven_seed::emit_ast_str("42").expect("Parse failed");
+    match expr {
+        aven_seed::Expr::Int(42, _, _) => {},
+        _ => panic!("Expected Expr::Int(42, _, _), got {:?}", expr),
+    }
+}
+
+#[test]
+fn test_emit_ast_let_binding() {
+    let expr = aven_seed::emit_ast_str("@let x :: 10").expect("Parse failed");
+    match expr {
+        aven_seed::Expr::Let { name, value, .. } => {
+            assert_eq!(name, "x");
+            match *value {
+                aven_seed::Expr::Int(10, _, _) => {},
+                _ => panic!("Expected value to be Int(10, _, _)"),
+            }
+        },
+        _ => panic!("Expected Expr::Let, got {:?}", expr),
+    }
+}
+
+#[test]
+fn test_emit_ast_arithmetic() {
+    let expr = aven_seed::emit_ast_str("(+ 2 3)").expect("Parse failed");
+    match expr {
+        aven_seed::Expr::Arithmetic { op, left, right, .. } => {
+            match op {
+                aven_seed::ast::ArithOp::Add => {},
+                _ => panic!("Expected Add operator"),
+            }
+            match *left {
+                aven_seed::Expr::Int(2, _, _) => {},
+                _ => panic!("Expected left to be Int(2, _, _)"),
+            }
+            match *right {
+                aven_seed::Expr::Int(3, _, _) => {},
+                _ => panic!("Expected right to be Int(3, _, _)"),
+            }
+        },
+        _ => panic!("Expected Expr::Arithmetic, got {:?}", expr),
+    }
+}
+
+#[test]
+fn test_emit_tokens_empty_input() {
+    let tokens = aven_seed::emit_tokens_str("");
+    assert_eq!(tokens.len(), 1);
+    assert_eq!(tokens[0], aven_seed::Token::Eof);
+}
+
+#[test]
+fn test_emit_tokens_whitespace_only() {
+    let tokens = aven_seed::emit_tokens_str("   \n  ");
+    assert_eq!(tokens.len(), 1);
+    assert_eq!(tokens[0], aven_seed::Token::Eof);
+}
+
+#[test]
+fn test_emit_ast_parse_error() {
+    let result = aven_seed::emit_ast_str("@fn unclosed");
+    assert!(result.is_err());
+}
+
+#[test]
+fn test_canonical_token_dump_format() {
+    let tokens = aven_seed::emit_tokens_str("(+ 42 \"hello\")");
+    let dump = aven_seed::canonical_token_dump(&tokens);
+    assert!(!dump.contains("{"));
+    assert!(!dump.contains("}"));
+    assert!(!dump.contains("#?"));
+    assert!(dump.contains("LeftParen"));
+    assert!(dump.contains("Plus"));
+    assert!(dump.contains("Integer 42"));
+    assert!(dump.contains("String"));
+}
+
+#[test]
+fn test_canonical_ast_dump_no_spans() {
+    let expr = aven_seed::emit_ast_str("42").unwrap();
+    let dump = aven_seed::canonical_ast_dump(&expr);
+    assert!(!dump.contains("SourceSpan"));
+    assert!(!dump.contains("NodeId"));
+    assert!(!dump.contains("start:"));
+    assert!(!dump.contains("end:"));
+    assert!(dump.contains("(Int 42)"));
+}
+
+#[test]
+fn test_canonical_ast_dump_no_debug_leaks() {
+    // Test FnDef with declared effects and capabilities
+    let input = "@fn read_file :: path:Str @cap [read] -!> Str @ret \"content\"";
+    let expr = aven_seed::emit_ast_str(input).unwrap();
+    let dump = aven_seed::canonical_ast_dump(&expr);
+
+    // Assert output uses parenthesized format, not debug syntax
+    assert!(dump.contains("(FnDef"));
+    assert!(!dump.contains("SourceSpan"));
+    assert!(!dump.contains("NodeId"));
+    assert!(!dump.contains("{"));
+    assert!(!dump.contains("}"));
+    assert!(!dump.contains("EffectSet"));
+    // Verify parenthesized structure is present
+    assert!(dump.contains("("));
+    assert!(dump.contains(")"));
+}
+
+#[test]
+fn test_canonical_ast_dump_block_nesting() {
+    // Verify Block children are unambiguous via parentheses
+    let input = "(+ 1 2)\n(+ 3 4)";
+    let expr = aven_seed::emit_ast_str(input).unwrap();
+    let dump = aven_seed::canonical_ast_dump(&expr);
+
+    // Two top-level statements parse into a Block
+    assert!(dump.contains("(Arithmetic Add (Int 1) (Int 2))"));
+    assert!(dump.contains("(Arithmetic Add (Int 3) (Int 4))"));
+    assert!(dump.contains("(Block "));     // confirms recoverable nesting wrapper
+    assert!(!dump.contains("{"));
+    assert!(!dump.contains("}"));
 }

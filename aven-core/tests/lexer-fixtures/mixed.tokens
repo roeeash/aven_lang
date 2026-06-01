@@ -1,0 +1,11 @@
+Fn
+Ident add
+Ident a
+Ident b
+Arrow
+LeftParen
+Plus
+Ident a
+Ident b
+RightParen
+Eof

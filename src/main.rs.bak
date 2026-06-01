@@ -286,7 +286,9 @@ fn run_emit_tokens(args: &[String]) {
     };
 
     let tokens = aven_seed::emit_tokens_str(&source);
-    println!("{}", aven_seed::canonical_token_dump(&tokens));
+    for token in tokens {
+        println!("{:?}", token);
+    }
 }
 
 fn run_emit_ast(args: &[String]) {
@@ -305,7 +307,7 @@ fn run_emit_ast(args: &[String]) {
     };
 
     match aven_seed::emit_ast_str(&source) {
-        Ok(expr) => println!("{}", aven_seed::canonical_ast_dump(&expr)),
+        Ok(expr) => println!("{:#?}", expr),
         Err(e) => {
             eprintln!("Parse error: {}", e);
             std::process::exit(1);

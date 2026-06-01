@@ -1947,6 +1947,249 @@ impl Env {
             },
         );
 
+        // Integer comparison builtins
+        env.define(
+            "int_eq".to_string(),
+            Value::NativeFn {
+                name: "int_eq".to_string(),
+                arity: 2,
+                func: Arc::new(|args| {
+                    if args.len() != 2 {
+                        return Err(EvalError::InvalidFunctionCall(format!(
+                            "Expected 2 args, got {}",
+                            args.len()
+                        )));
+                    }
+                    match (&args[0], &args[1]) {
+                        (Value::Int(a), Value::Int(b)) => Ok(Value::Bool(a == b)),
+                        _ => Err(EvalError::TypeError("int_eq requires two Int arguments".to_string())),
+                    }
+                }),
+            },
+        );
+
+        env.define(
+            "int_lt".to_string(),
+            Value::NativeFn {
+                name: "int_lt".to_string(),
+                arity: 2,
+                func: Arc::new(|args| {
+                    if args.len() != 2 {
+                        return Err(EvalError::InvalidFunctionCall(format!(
+                            "Expected 2 args, got {}",
+                            args.len()
+                        )));
+                    }
+                    match (&args[0], &args[1]) {
+                        (Value::Int(a), Value::Int(b)) => Ok(Value::Bool(a < b)),
+                        _ => Err(EvalError::TypeError("int_lt requires two Int arguments".to_string())),
+                    }
+                }),
+            },
+        );
+
+        env.define(
+            "int_gt".to_string(),
+            Value::NativeFn {
+                name: "int_gt".to_string(),
+                arity: 2,
+                func: Arc::new(|args| {
+                    if args.len() != 2 {
+                        return Err(EvalError::InvalidFunctionCall(format!(
+                            "Expected 2 args, got {}",
+                            args.len()
+                        )));
+                    }
+                    match (&args[0], &args[1]) {
+                        (Value::Int(a), Value::Int(b)) => Ok(Value::Bool(a > b)),
+                        _ => Err(EvalError::TypeError("int_gt requires two Int arguments".to_string())),
+                    }
+                }),
+            },
+        );
+
+        env.define(
+            "int_le".to_string(),
+            Value::NativeFn {
+                name: "int_le".to_string(),
+                arity: 2,
+                func: Arc::new(|args| {
+                    if args.len() != 2 {
+                        return Err(EvalError::InvalidFunctionCall(format!(
+                            "Expected 2 args, got {}",
+                            args.len()
+                        )));
+                    }
+                    match (&args[0], &args[1]) {
+                        (Value::Int(a), Value::Int(b)) => Ok(Value::Bool(a <= b)),
+                        _ => Err(EvalError::TypeError("int_le requires two Int arguments".to_string())),
+                    }
+                }),
+            },
+        );
+
+        env.define(
+            "int_ge".to_string(),
+            Value::NativeFn {
+                name: "int_ge".to_string(),
+                arity: 2,
+                func: Arc::new(|args| {
+                    if args.len() != 2 {
+                        return Err(EvalError::InvalidFunctionCall(format!(
+                            "Expected 2 args, got {}",
+                            args.len()
+                        )));
+                    }
+                    match (&args[0], &args[1]) {
+                        (Value::Int(a), Value::Int(b)) => Ok(Value::Bool(a >= b)),
+                        _ => Err(EvalError::TypeError("int_ge requires two Int arguments".to_string())),
+                    }
+                }),
+            },
+        );
+
+        // Boolean logic builtins
+        env.define(
+            "bool_and".to_string(),
+            Value::NativeFn {
+                name: "bool_and".to_string(),
+                arity: 2,
+                func: Arc::new(|args| {
+                    if args.len() != 2 {
+                        return Err(EvalError::InvalidFunctionCall(format!(
+                            "Expected 2 args, got {}",
+                            args.len()
+                        )));
+                    }
+                    match (&args[0], &args[1]) {
+                        (Value::Bool(a), Value::Bool(b)) => Ok(Value::Bool(*a && *b)),
+                        _ => Err(EvalError::TypeError("bool_and requires two Bool arguments".to_string())),
+                    }
+                }),
+            },
+        );
+
+        env.define(
+            "bool_or".to_string(),
+            Value::NativeFn {
+                name: "bool_or".to_string(),
+                arity: 2,
+                func: Arc::new(|args| {
+                    if args.len() != 2 {
+                        return Err(EvalError::InvalidFunctionCall(format!(
+                            "Expected 2 args, got {}",
+                            args.len()
+                        )));
+                    }
+                    match (&args[0], &args[1]) {
+                        (Value::Bool(a), Value::Bool(b)) => Ok(Value::Bool(*a || *b)),
+                        _ => Err(EvalError::TypeError("bool_or requires two Bool arguments".to_string())),
+                    }
+                }),
+            },
+        );
+
+        env.define(
+            "bool_not".to_string(),
+            Value::NativeFn {
+                name: "bool_not".to_string(),
+                arity: 1,
+                func: Arc::new(|args| {
+                    if args.len() != 1 {
+                        return Err(EvalError::InvalidFunctionCall(format!(
+                            "Expected 1 arg, got {}",
+                            args.len()
+                        )));
+                    }
+                    match &args[0] {
+                        Value::Bool(a) => Ok(Value::Bool(!a)),
+                        _ => Err(EvalError::TypeError("bool_not requires Bool argument".to_string())),
+                    }
+                }),
+            },
+        );
+
+        // String/character ordering builtins
+        env.define(
+            "str_lt".to_string(),
+            Value::NativeFn {
+                name: "str_lt".to_string(),
+                arity: 2,
+                func: Arc::new(|args| {
+                    if args.len() != 2 {
+                        return Err(EvalError::InvalidFunctionCall(format!(
+                            "Expected 2 args, got {}",
+                            args.len()
+                        )));
+                    }
+                    match (&args[0], &args[1]) {
+                        (Value::Str(a), Value::Str(b)) => Ok(Value::Bool(a < b)),
+                        _ => Err(EvalError::TypeError("str_lt requires two Str arguments".to_string())),
+                    }
+                }),
+            },
+        );
+
+        env.define(
+            "str_gt".to_string(),
+            Value::NativeFn {
+                name: "str_gt".to_string(),
+                arity: 2,
+                func: Arc::new(|args| {
+                    if args.len() != 2 {
+                        return Err(EvalError::InvalidFunctionCall(format!(
+                            "Expected 2 args, got {}",
+                            args.len()
+                        )));
+                    }
+                    match (&args[0], &args[1]) {
+                        (Value::Str(a), Value::Str(b)) => Ok(Value::Bool(a > b)),
+                        _ => Err(EvalError::TypeError("str_gt requires two Str arguments".to_string())),
+                    }
+                }),
+            },
+        );
+
+        env.define(
+            "str_le".to_string(),
+            Value::NativeFn {
+                name: "str_le".to_string(),
+                arity: 2,
+                func: Arc::new(|args| {
+                    if args.len() != 2 {
+                        return Err(EvalError::InvalidFunctionCall(format!(
+                            "Expected 2 args, got {}",
+                            args.len()
+                        )));
+                    }
+                    match (&args[0], &args[1]) {
+                        (Value::Str(a), Value::Str(b)) => Ok(Value::Bool(a <= b)),
+                        _ => Err(EvalError::TypeError("str_le requires two Str arguments".to_string())),
+                    }
+                }),
+            },
+        );
+
+        env.define(
+            "str_ge".to_string(),
+            Value::NativeFn {
+                name: "str_ge".to_string(),
+                arity: 2,
+                func: Arc::new(|args| {
+                    if args.len() != 2 {
+                        return Err(EvalError::InvalidFunctionCall(format!(
+                            "Expected 2 args, got {}",
+                            args.len()
+                        )));
+                    }
+                    match (&args[0], &args[1]) {
+                        (Value::Str(a), Value::Str(b)) => Ok(Value::Bool(a >= b)),
+                        _ => Err(EvalError::TypeError("str_ge requires two Str arguments".to_string())),
+                    }
+                }),
+            },
+        );
+
         // aven/std/math::add — arity 2, takes two Ints, returns Int with overflow check
         env.define(
             "aven/std/math::add".to_string(),

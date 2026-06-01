@@ -1,0 +1,332 @@
+; AVEN Lexer (S2.1) — tokenizes source text into canonical \n-joined token stream
+; Recognizes all 66 token kinds; emits canonical format per AST_ENCODING.md.
+; Main entry point: tokenize(source:Str) -> Str
+
+@fn tokenize :: source:Str -> Str
+  @let pos :: 0
+  @let len :: (@call str_len source)
+  @let tokens :: ""
+  (loop-tokens source pos len tokens)
+
+@fn loop-tokens :: source:Str pos:Int len:Int tokens:Str -> Str
+  @if (@call int_ge pos len)
+    @then (+ tokens "Eof")
+    @else
+      (skip-ws-and-comments source pos len)
+      |>
+      @let next_pos :: @[0]
+      @let tok_str :: @[1]
+      @if (@call str_eq tok_str "")
+        @then (loop-tokens source next_pos len tokens)
+        @else (loop-tokens source next_pos len (+ tokens tok_str "\n"))
+
+@fn skip-ws-and-comments :: source:Str pos:Int len:Int -> (Int, Str)
+  @if (@call int_ge pos len)
+    @then (pos, "")
+    @else
+      @let c :: (@call str_get source pos)
+      @if (@call bool_or (@call str_eq c " ") (@call bool_or (@call str_eq c "\t") (@call str_eq c "\r")))
+        @then (skip-ws-and-comments source (+ pos 1) len)
+        @else
+          @if (@call str_eq c ";")
+            @then (skip-to-eol source (+ pos 1) len)
+            @else
+              @if (@call str_eq c "\n")
+                @then (skip-ws-and-comments source (+ pos 1) len)
+                @else (next-token source pos len)
+
+@fn skip-to-eol :: source:Str pos:Int len:Int -> (Int, Str)
+  @if (@call int_ge pos len)
+    @then (pos, "")
+    @else
+      @let c :: (@call str_get source pos)
+      @if (@call str_eq c "\n")
+        @then (skip-ws-and-comments source (+ pos 1) len)
+        @else (skip-to-eol source (+ pos 1) len)
+
+@fn next-token :: source:Str pos:Int len:Int -> (Int, Str)
+  @if (@call int_ge pos len)
+    @then (pos, "")
+    @else
+      @let c :: (@call str_get source pos)
+      @if (@call str_eq c "@")
+        @then (read-keyword source (+ pos 1) len)
+        @else
+          @if (@call str_eq c "#")
+            @then (read-symbol source (+ pos 1) len)
+            @else
+              @if (@call str_eq c "\"")
+                @then (read-string source (+ pos 1) len)
+                @else
+                  @if (@call str_eq c ":")
+                    @then (check-double-colon source (+ pos 1) len)
+                    @else
+                      @if (@call str_eq c "-")
+                        @then (check-arrow-or-minus source (+ pos 1) len)
+                        @else
+                          @if (@call bool_or (@call str_eq c "(") (@call bool_or (@call str_eq c ")") (@call bool_or (@call str_eq c "[") (@call str_eq c "]"))))
+                            @then ((+ pos 1) (paren-token c))
+                            @else
+                              @if (@call bool_or (@call str_eq c "{") (@call bool_or (@call str_eq c "}") (@call bool_or (@call str_eq c ",") (@call str_eq c "|"))))
+                                @then ((+ pos 1) (brace-token c))
+                                @else
+                                  @if (@call bool_or (@call str_eq c "+") (@call bool_or (@call str_eq c "*") (@call bool_or (@call str_eq c "/") (@call str_eq c "?"))))
+                                    @then ((+ pos 1) (op-token c))
+                                    @else
+                                      @if (@call str_eq c "_")
+                                        @then ((+ pos 1) "Underscore")
+                                        @else
+                                          @if (is-digit c)
+                                            @then (read-number source pos len)
+                                            @else
+                                              @if (is-letter c)
+                                                @then (read-ident source pos len)
+                                                @else ((+ pos 1) "")
+
+@fn read-keyword :: source:Str pos:Int len:Int -> (Int, Str)
+  @let ident_result :: (read-ident source pos len)
+  @let next_pos :: @[0]
+  @let ident :: @[1]
+  @let tok :: (keyword-to-token ident)
+  (next_pos, tok)
+
+@fn keyword-to-token :: ident:Str -> Str
+  @if (@call str_eq ident "let") @then "Let"
+  @else @if (@call str_eq ident "fn") @then "Fn"
+  @else @if (@call str_eq ident "type") @then "Type"
+  @else @if (@call str_eq ident "ret") @then "Ret"
+  @else @if (@call str_eq ident "if") @then "If"
+  @else @if (@call str_eq ident "then") @then "Then"
+  @else @if (@call str_eq ident "else") @then "Else"
+  @else @if (@call str_eq ident "true") @then "True"
+  @else @if (@call str_eq ident "false") @then "False"
+  @else @if (@call str_eq ident "call") @then "Call"
+  @else @if (@call str_eq ident "cap") @then "Cap"
+  @else @if (@call str_eq ident "use") @then "Use"
+  @else @if (@call str_eq ident "from") @then "From"
+  @else @if (@call str_eq ident "mod") @then "Mod"
+  @else @if (@call str_eq ident "pub") @then "Pub"
+  @else @if (@call str_eq ident "match") @then "Match"
+  @else @if (@call str_eq ident "ok") @then "Ok"
+  @else @if (@call str_eq ident "err") @then "Err"
+  @else @if (@call str_eq ident "as") @then "As"
+  @else @if (@call str_eq ident "io.write") @then "IoWrite"
+  @else @if (@call str_eq ident "intent") @then "Intent"
+  @else @if (@call str_eq ident "uncertain") @then "Uncertain"
+  @else @if (@call str_eq ident "ctx.get") @then "CtxGet"
+  @else @if (@call str_eq ident "ctx.set") @then "CtxSet"
+  @else @if (@call str_eq ident "ctx") @then "Ctx"
+  @else @if (@call str_eq ident "diff") @then "Diff"
+  @else @if (@call str_eq ident "diffs") @then "Diffs"
+  @else @if (@call str_eq ident "replace") @then "Replace"
+  @else @if (@call str_eq ident "insert") @then "Insert"
+  @else @if (@call str_eq ident "delete") @then "Delete"
+  @else @if (@call str_eq ident "move") @then "Move"
+  @else @if (@call str_eq ident "copy") @then "Copy"
+  @else @if (@call str_eq ident "meta") @then "Meta"
+  @else @if (@call str_eq ident "to") @then "To"
+  @else @if (@call str_eq ident "first") @then "First"
+  @else @if (@call str_eq ident "last") @then "Last"
+  @else @if (@call str_eq ident "before") @then "Before"
+  @else @if (@call str_eq ident "after") @then "After"
+  @else @if (@call str_eq ident "patch-for") @then "PatchFor"
+  @else (+ "Ident @" ident)
+
+@fn read-symbol :: source:Str pos:Int len:Int -> (Int, Str)
+  @let name_result :: (read-symbol-name source pos len)
+  @let next_pos :: @[0]
+  @let name :: @[1]
+  (next_pos, (+ "Ident #" name))
+
+@fn read-symbol-name :: source:Str pos:Int len:Int -> (Int, Str)
+  @let name :: ""
+  (read-symbol-loop source pos len name)
+
+@fn read-symbol-loop :: source:Str pos:Int len:Int name:Str -> (Int, Str)
+  @if (@call int_ge pos len)
+    @then (pos, name)
+    @else
+      @let c :: (@call str_get source pos)
+      @if (@call bool_or (is-alnum c) (@call str_eq c "_"))
+        @then (read-symbol-loop source (+ pos 1) len (+ name c))
+        @else (pos, name)
+
+@fn read-string :: source:Str pos:Int len:Int -> (Int, Str)
+  @let content :: ""
+  @let result :: (read-string-loop source pos len content)
+  @let next_pos :: @[0]
+  @let str_content :: @[1]
+  (next_pos, (+ "String \"" str_content "\""))
+
+@fn read-string-loop :: source:Str pos:Int len:Int content:Str -> (Int, Str)
+  @if (@call int_ge pos len)
+    @then (pos, content)
+    @else
+      @let c :: (@call str_get source pos)
+      @if (@call str_eq c "\"")
+        @then ((+ pos 1) content)
+        @else
+          @if (@call str_eq c "\\")
+            @then
+              @if (@call int_ge (+ pos 1) len)
+                @then ((+ pos 1) (+ content "\\"))
+                @else
+                  @let next_c :: (@call str_get source (+ pos 1))
+                  @let escaped :: (escape-char next_c)
+                  (read-string-loop source (+ pos 2) len (+ content escaped))
+            @else (read-string-loop source (+ pos 1) len (+ content c))
+
+@fn escape-char :: c:Str -> Str
+  @if (@call str_eq c "n") @then "\n"
+  @else @if (@call str_eq c "t") @then "\t"
+  @else @if (@call str_eq c "\\") @then "\\"
+  @else @if (@call str_eq c "\"") @then "\""
+  @else c
+
+@fn check-double-colon :: source:Str pos:Int len:Int -> (Int, Str)
+  @if (@call int_ge pos len)
+    @then (pos, "Colon")
+    @else
+      @let c :: (@call str_get source pos)
+      @if (@call str_eq c ":")
+        @then ((+ pos 1) "DoubleColon")
+        @else (pos, "Colon")
+
+@fn check-arrow-or-minus :: source:Str pos:Int len:Int -> (Int, Str)
+  @if (@call int_ge pos len)
+    @then (pos, "Minus")
+    @else
+      @let c :: (@call str_get source pos)
+      @if (@call str_eq c ">")
+        @then ((+ pos 1) "Arrow")
+        @else
+          @if (is-effect-sigil c)
+            @then (read-effect-arrow source (+ pos 1) len c)
+            @else
+              @if (is-digit c)
+                @then (read-negative-number source pos len)
+                @else (pos, "Minus")
+
+@fn is-effect-sigil :: c:Str -> @Bool
+  (@call bool_or (@call str_eq c "?") (@call bool_or (@call str_eq c "!") (@call str_eq c "~")))
+
+@fn read-effect-arrow :: source:Str pos:Int len:Int sigils:Str -> (Int, Str)
+  @if (@call int_ge pos len)
+    @then (pos, (+ "EffectArrow " sigils))
+    @else
+      @let c :: (@call str_get source pos)
+      @if (@call str_eq c ">")
+        @then ((+ pos 1) (+ "EffectArrow " sigils))
+        @else
+          @if (is-effect-sigil c)
+            @then (read-effect-arrow source (+ pos 1) len (+ sigils c))
+            @else (pos, (+ "EffectArrow " sigils))
+
+@fn read-negative-number :: source:Str pos:Int len:Int -> (Int, Str)
+  @let num_result :: (read-number-digits source pos len)
+  @let next_pos :: @[0]
+  @let num_str :: @[1]
+  (next_pos, (+ "Integer -" num_str))
+
+@fn read-number :: source:Str pos:Int len:Int -> (Int, Str)
+  @let int_result :: (read-number-digits source pos len)
+  @let next_pos :: @[0]
+  @let int_part :: @[1]
+  @if (@call int_ge next_pos len)
+    @then (next_pos, (+ "Integer " int_part))
+    @else
+      @let c :: (@call str_get source next_pos)
+      @if (@call str_eq c ".")
+        @then (read-float source (+ next_pos 1) len int_part)
+        @else
+          @if (@call bool_or (@call str_eq c "e") (@call str_eq c "E"))
+            @then (read-exponent source (+ next_pos 1) len int_part)
+            @else (next_pos, (+ "Integer " int_part))
+
+@fn read-float :: source:Str pos:Int len:Int int_part:Str -> (Int, Str)
+  @let frac_result :: (read-number-digits source pos len)
+  @let next_pos :: @[0]
+  @let frac_part :: @[1]
+  @if (@call int_ge next_pos len)
+    @then (next_pos, (+ "Float " int_part "." frac_part))
+    @else
+      @let c :: (@call str_get source next_pos)
+      @if (@call bool_or (@call str_eq c "e") (@call str_eq c "E"))
+        @then (read-exponent source (+ next_pos 1) len (+ int_part "." frac_part))
+        @else (next_pos, (+ "Float " int_part "." frac_part))
+
+@fn read-exponent :: source:Str pos:Int len:Int mantissa:Str -> (Int, Str)
+  @if (@call int_ge pos len)
+    @then (pos, (+ "Float " mantissa "e0"))
+    @else
+      @let c :: (@call str_get source pos)
+      @if (@call bool_or (@call str_eq c "+") (@call str_eq c "-"))
+        @then (read-exp-digits source (+ pos 1) len (+ mantissa "e" c))
+        @else (read-exp-digits source pos len (+ mantissa "e"))
+
+@fn read-exp-digits :: source:Str pos:Int len:Int prefix:Str -> (Int, Str)
+  @let exp_result :: (read-number-digits source pos len)
+  @let next_pos :: @[0]
+  @let exp_part :: @[1]
+  (next_pos, (+ "Float " prefix exp_part))
+
+@fn read-number-digits :: source:Str pos:Int len:Int -> (Int, Str)
+  @let digits :: ""
+  (read-digits-loop source pos len digits)
+
+@fn read-digits-loop :: source:Str pos:Int len:Int digits:Str -> (Int, Str)
+  @if (@call int_ge pos len)
+    @then (pos, digits)
+    @else
+      @let c :: (@call str_get source pos)
+      @if (@call bool_or (is-digit c) (@call str_eq c "_"))
+        @then (read-digits-loop source (+ pos 1) len (+ digits c))
+        @else (pos, digits)
+
+@fn read-ident :: source:Str pos:Int len:Int -> (Int, Str)
+  @let ident :: ""
+  (read-ident-loop source pos len ident)
+
+@fn read-ident-loop :: source:Str pos:Int len:Int ident:Str -> (Int, Str)
+  @if (@call int_ge pos len)
+    @then (pos, ident)
+    @else
+      @let c :: (@call str_get source pos)
+      @if (@call bool_or (is-alnum c) (@call str_eq c "-"))
+        @then (read-ident-loop source (+ pos 1) len (+ ident c))
+        @else
+          @if (@call str_eq c ".")
+            @then (read-ident-loop source (+ pos 1) len (+ ident c))
+            @else
+              @let tok :: (ident-to-token ident)
+              (pos, tok)
+
+@fn ident-to-token :: ident:Str -> Str
+  (+ "Ident " ident)
+
+@fn paren-token :: c:Str -> Str
+  @if (@call str_eq c "(") @then "LeftParen"
+  @else @if (@call str_eq c ")") @then "RightParen"
+  @else @if (@call str_eq c "[") @then "LeftBracket"
+  @else "RightBracket"
+
+@fn brace-token :: c:Str -> Str
+  @if (@call str_eq c "{") @then "LeftBrace"
+  @else @if (@call str_eq c "}") @then "RightBrace"
+  @else @if (@call str_eq c ",") @then "Comma"
+  @else "Pipe"
+
+@fn op-token :: c:Str -> Str
+  @if (@call str_eq c "+") @then "Plus"
+  @else @if (@call str_eq c "*") @then "Star"
+  @else @if (@call str_eq c "/") @then "Slash"
+  @else "Question"
+
+@fn is-digit :: c:Str -> @Bool
+  (@call bool_and (@call str_ge c "0") (@call str_le c "9"))
+
+@fn is-letter :: c:Str -> @Bool
+  (@call bool_or (@call bool_and (@call str_ge c "a") (@call str_le c "z")) (@call bool_and (@call str_ge c "A") (@call str_le c "Z")))
+
+@fn is-alnum :: c:Str -> @Bool
+  (@call bool_or (is-digit c) (is-letter c))
