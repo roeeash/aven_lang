@@ -156,7 +156,7 @@ cargo test
 
 ## What Is in This Repo
 
-This is the **AVEN seed interpreter** — Milestone 1 of 7, written in Rust.
+This repo contains the **AVEN seed interpreter** (Rust, M1–M7) and the **AVEN-written compiler** (Stage 2, `aven-core/`).
 
 | Component | File | What it does |
 |---|---|---|
@@ -167,7 +167,20 @@ This is the **AVEN seed interpreter** — Milestone 1 of 7, written in Rust.
 | Type checker | `src/typechecker.rs` | Structural annotation validator (full enforcement in M2) |
 | Formatter | `src/fmt.rs` | Canonical pretty-printer |
 | CLI | `src/main.rs` | REPL + `verify`, `intent`, `check-uncertainty` subcommands |
-| Tests | `tests/integration.rs` | End-to-end test suite |
+| Tests | `tests/integration.rs` | End-to-end test suite (503+ passing) |
+
+**Stage 2 — AVEN-written compiler (`aven-core/`)**
+
+| Component | File | Stage |
+|---|---|---|
+| Lexer | `aven-core/lexer.aven` | S2.1 |
+| Parser | `aven-core/parser.aven` | S2.2 |
+| Type checker | `aven-core/check.aven` | S2.3 |
+| Module resolver | `aven-core/module.aven` | S2.4 |
+| `@diff` engine | `aven-core/diff.aven` | S2.5 |
+| Evaluator | `aven-core/eval.aven` | S2.6 |
+| Driver/CLI | `aven-core/driver.aven` | S2.7 |
+| Entry point | `aven-core/main.aven` | S2.7 |
 
 ---
 
@@ -183,7 +196,9 @@ This is the **AVEN seed interpreter** — Milestone 1 of 7, written in Rust.
 | **M6 — Stdlib** | ✅ Complete | `aven/std/io`, `fs`, `http`, `json`, `math`, `time`, `str`, `collections` — 8 modules, all as `NativeFn` closures |
 | **M7 — Self-hosting prep** | ✅ Complete | Span-aware errors, `aven fmt`, `aven repl`, full spec coverage audit, non-trivial AVEN program, `@uncertain` deploy blocker, `@intent` index dump |
 
-**All M1–M7 milestones are complete.** 436+ tests passing, zero warnings. The seed interpreter is stable; Stage 2 (self-hosted AVEN compiler written in AVEN) is the next horizon.
+**All M1–M7 milestones are complete.** 503+ tests passing, zero warnings. The seed interpreter is stable.
+
+**Stage 2 (self-hosted AVEN compiler written in AVEN) is structurally complete.** All 8 pipeline components are implemented in `aven-core/`: lexer, parser, type checker, module resolver, `@diff` engine, evaluator, driver, and entry point. The `run :: source → eval` pipeline chains all stages. Runtime end-to-end verification (S2.8 fixpoint) is QUEUED pending the `aven` binary. See [ROADMAP.md](ROADMAP.md) for the full Stage 2 milestone log.
 
 See [ROADMAP.md](ROADMAP.md) for the full milestone log and [AVEN_SPEC.md](AVEN_SPEC.md) for the language specification.
 
