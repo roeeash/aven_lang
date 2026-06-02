@@ -1,1 +1,104 @@
-; diff.aven: Handle code transformation and structured edits
+; S2.5 @diff engine — replace AST lines by selector
+; Selectors: "fn name" or "let name"
+; AST is \n-joined lines
+
+; Standard helpers (copied from S2.1–S2.4)
+
+@fn peek :: remaining:Str -> Str
+  @let nl_pos :: (find-newline remaining 0 (@call str_len remaining))
+  @if (@call int_eq nl_pos -1)
+    @then remaining
+    @else (@call str_sub remaining 0 nl_pos)
+
+@fn advance :: remaining:Str -> Str
+  @let nl_pos :: (find-newline remaining 0 (@call str_len remaining))
+  @if (@call int_eq nl_pos -1)
+    @then ""
+    @else (@call str_sub remaining (+ nl_pos 1) (@call str_len remaining))
+
+@fn find-newline :: s:Str pos:Int len:Int -> Int
+  @if (@call int_ge pos len)
+    @then -1
+    @else
+      @let c :: (@call str_get s pos)
+      @if (@call str_eq c "\n")
+        @then pos
+        @else (find-newline s (+ pos 1) len)
+
+@fn starts-with :: s:Str prefix:Str -> @Bool
+  @let plen :: (@call str_len prefix)
+  @let slen :: (@call str_len s)
+  @if (@call int_gt plen slen)
+    @then @false
+    @else (@call str_eq (@call str_sub s 0 plen) prefix)
+
+; Selector matching: "fn add" matches "(FnDef add ...)", "let x" matches "(Let x ...)"
+
+@fn matches-selector :: line:Str selector:Str -> @Bool
+  @let sel-kind :: (selector-kind selector)
+  @let sel-name :: (selector-name selector)
+  @if (@call str_eq sel-kind "fn")
+    @then
+      @if (starts-with line "(FnDef ")
+        @then
+          @let after-fndef :: (@call str_sub line 7 (@call str_len line))
+          @let sp :: (find-first-space after-fndef 0 (@call str_len after-fndef))
+          @let name :: (@call str_sub after-fndef 0 sp)
+          (@call str_eq name sel-name)
+        @else @false
+    @else
+      @if (@call str_eq sel-kind "let")
+        @then
+          @if (starts-with line "(Let ")
+            @then
+              @let after-let :: (@call str_sub line 5 (@call str_len line))
+              @let sp :: (find-first-space after-let 0 (@call str_len after-let))
+              @let name :: (@call str_sub after-let 0 sp)
+              (@call str_eq name sel-name)
+            @else @false
+        @else @false
+
+@fn selector-kind :: selector:Str -> Str
+  @let sp :: (find-first-space selector 0 (@call str_len selector))
+  (@call str_sub selector 0 sp)
+
+@fn selector-name :: selector:Str -> Str
+  @let sp :: (find-first-space selector 0 (@call str_len selector))
+  (@call str_sub selector (+ sp 1) (@call str_len selector))
+
+@fn find-first-space :: s:Str pos:Int len:Int -> Int
+  @if (@call int_ge pos len)
+    @then len
+    @else
+      @let c :: (@call str_get s pos)
+      @if (@call str_eq c " ")
+        @then pos
+        @else (find-first-space s (+ pos 1) len)
+
+; Main entry: replace first line matching selector with replacement
+
+@fn apply-patch :: ast:Str selector:Str replacement:Str -> Str
+  (scan-and-replace ast selector replacement "" @false)
+
+; Walk lines, replace first match, accumulate result
+
+@fn scan-and-replace :: ast:Str selector:Str replacement:Str acc:Str found:@Bool -> Str
+  @let line :: (peek ast)
+  @if (@call str_eq line "")
+    @then
+      @if found
+        @then acc
+        @else (+ "ERROR:not-found:" selector)
+    @else
+      @if (@call bool_and (@call bool_not found) (matches-selector line selector))
+        @then
+          @let new-acc :: (if-acc-empty acc replacement (+ acc (+ "\n" replacement)))
+          (scan-and-replace (advance ast) selector replacement new-acc @true)
+        @else
+          @let new-acc :: (if-acc-empty acc line (+ acc (+ "\n" line)))
+          (scan-and-replace (advance ast) selector replacement new-acc found)
+
+@fn if-acc-empty :: acc:Str first-val:Str second-val:Str -> Str
+  @if (@call str_eq acc "")
+    @then first-val
+    @else second-val

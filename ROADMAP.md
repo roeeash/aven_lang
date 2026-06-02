@@ -440,7 +440,7 @@ Note: in the current sandbox `cargo`/`rustc` are unavailable and the network is 
 | S2.2 — Parser in AVEN | ✅ Done |
 | S2.3 — Type & effect checker | ✅ Done |
 | S2.4 — Module resolver | ✅ Done |
-| S2.5 — `@diff` engine | Pending |
+| S2.5 — `@diff` engine | ✅ Done |
 | S2.6 — Evaluator (backend) | Pending |
 | S2.7 — Driver + CLI | Pending |
 | S2.8 — Self-hosting fixpoint | Pending |
@@ -621,3 +621,9 @@ Three `\n`-separated lines: registry string, modname, requested caps. The resolv
 - All 5 fixtures present with hand-traced verdicts.
 
 **Out of scope.** DAG cycle detection, topological sort, `@pub` export enforcement, `@ctx` threading, multi-file module loading (all deferred to S2.7 driver).
+
+---
+
+### S2.5 — `@diff` engine in AVEN — **Done**
+
+**Outcome.** `aven-core/diff.aven` implements selector-based AST-line replacement (11 functions). Selectors `"fn name"` match `(FnDef name ...)` and `"let name"` match `(Let name ...)`. `scan-and-replace` threads `found:@Bool` to replace only the FIRST match — Haiku reviewer caught that subsequent matching lines were also replaced (fixed: guard with `bool_and(bool_not found, matches-selector)`). `if-acc-empty` handles leading-newline correctly. Opus approved Round 1. 4 golden fixtures. Runtime parity QUEUED.

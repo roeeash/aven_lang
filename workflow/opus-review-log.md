@@ -1454,3 +1454,7 @@ Both fixes verified: env-extend prepend produces correct shadow semantics (newes
 ## S2.4 — Round 1 (APPROVED)
 
 Module resolver clean first pass. All 5 fixtures trace correctly. Binary `+` throughout. Registry-scan/caps-scan handle empty registry, trailing `\n`, multi-line registry, partial module name matches correctly.
+
+## S2.5 — Round 1 (APPROVED)
+
+Haiku reviewer caught duplicate-match bug (found=@true not checked before matches-selector, so second matching line also got replaced). Orchestrator fixed directly: guard with bool_and(bool_not found, matches-selector). Opus approved. All string concat uses binary + form.

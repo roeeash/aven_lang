@@ -1,0 +1,3 @@
+ast:(FnDef add ((a Int)) (Ret (Var a)) Int [])
+selector:fn missing
+replacement:(FnDef missing () (Ret (Int 0)) Int [])

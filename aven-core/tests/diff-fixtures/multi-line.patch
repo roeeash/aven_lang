@@ -1,0 +1,5 @@
+ast:(Let x (Int 1))
+(Let y (Int 2))
+(Let z (Int 3))
+selector:let y
+replacement:(Let y (Int 99))
