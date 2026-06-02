@@ -1,0 +1,13 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "aven-guard"
+version = "0.1.0"
+description = "AI-safe AVEN verification bridge"
+requires-python = ">=3.8"
+dependencies = []
+
+[project.scripts]
+aven-guard = "aven_guard.cli:main"
