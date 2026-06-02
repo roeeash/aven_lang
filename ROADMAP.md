@@ -439,7 +439,7 @@ Note: in the current sandbox `cargo`/`rustc` are unavailable and the network is 
 | **S2.1 — Lexer in AVEN** | ✅ Done |
 | S2.2 — Parser in AVEN | ✅ Done |
 | S2.3 — Type & effect checker | ✅ Done |
-| S2.4 — Module resolver | Pending |
+| S2.4 — Module resolver | ✅ Done |
 | S2.5 — `@diff` engine | Pending |
 | S2.6 — Evaluator (backend) | Pending |
 | S2.7 — Driver + CLI | Pending |
@@ -567,3 +567,57 @@ Note: in the current sandbox `cargo`/`rustc` are unavailable and the network is 
 - Type-mismatch errors reported for: non-Bool `@if` condition; mixed-type arithmetic.
 
 **Out of scope.** Effect arrows, `@uncertain` tracking, `@match`, `@mod`/`@use`, full bidirectional inference, inline `FnDef` body type unification (body-vs-declared return type check), generics, runtime parity (QUEUED).
+
+---
+
+### S2.4 — Module resolver in AVEN — **Done**
+
+**Outcome.** `aven-core/module.aven` implements capability-based module resolution (10 functions). Registry threaded as `\n`-joined `modname:caps\n` string; `registry-extend` prepends for shadow semantics. `caps-contain` correctly matches exact comma-delimited tokens (no prefix false-positives). `resolve` returns `PASS` or `ERROR:module-not-found:X` / `ERROR:cap-not-exported:X`. Opus approved Round 1 (clean first pass). 5 golden fixtures. Runtime parity QUEUED.
+
+## Active Stage spec (archived): S2.4 — Module resolver in AVEN
+
+**Goal.** Implement capability-based module resolution in `aven-core/module.aven`. A module registry maps module names to their exported capabilities. The resolver checks that `@use [cap1, cap2] from modname` requests only a subset of what `modname` exports. No DAG or topological sort (deferred — requires list structures); this stage establishes the module identity + capability verification layer.
+
+**Files touched.**
+- `aven-core/module.aven` — resolver implementation (replaces stub).
+- `aven-core/tests/module-fixtures/*.query` — 5 test query files (new).
+- `aven-core/tests/module-fixtures/*.verdict` — 5 verdict files (new).
+
+**Registry representation.** A `\n`-joined string of `modname:cap1,cap2,cap3\n` entries. Example: `"fs:read,write,list\nhttp:get,post\n"`. A module with no capabilities: `"math:none\n"`. The registry is threaded as a parameter; no global state.
+
+**Capability string representation.** Capabilities within a module entry are `,`-joined. Example `"read,write,list"`. A query `"read,write"` is a subset of `"read,write,list"`.
+
+**Specific changes — `module.aven`:**
+- `@fn resolve :: registry:Str modname:Str requested:Str -> Str` — entry point; looks up `modname` in registry, checks every cap in `requested` is present in the module's cap list; returns `"PASS"` or `"ERROR:cap-not-exported:<cap>"`.
+- `@fn registry-lookup :: registry:Str modname:Str -> Str` — scans `\n`-joined registry for `modname:...`, returns caps string or `"NOT_FOUND"`.
+- `@fn registry-extend :: registry:Str modname:Str caps:Str -> Str` — prepends `modname:caps\n` to registry (same shadow-first pattern as S2.3 env-extend).
+- `@fn caps-contain :: caps:Str needle:Str -> @Bool` — checks if `needle` appears as a `,`-delimited entry in `caps`.
+- `@fn check-caps :: caps:Str requested:Str -> Str` — iterates over `,`-split `requested`, calls `caps-contain` for each; returns `"PASS"` or `"ERROR:cap-not-exported:<first-missing-cap>"`.
+- Iteration helpers (no list type in seed-AVEN; use position-based recursion):
+  - `@fn next-cap :: s:Str pos:Int -> Str` — returns next `,`-delimited token starting at `pos`.
+  - `@fn find-comma :: s:Str pos:Int len:Int -> Int` — returns position of next `,` or `len` if none.
+  - `@fn skip-cap :: s:Str pos:Int -> Int` — returns position after current cap (past `,` or at `len`).
+
+**Token format for query files.** Each `.query` file contains:
+```
+registry: fs:read,write,list\nhttp:get\n
+module: fs
+caps: read,write
+```
+Three `\n`-separated lines: registry string, modname, requested caps. The resolver reads these three fields.
+
+**Tests to add** (hand-traced):
+- `ok-subset.query` + `ok-subset.verdict`: `fs` exports `read,write,list`; request `read,write` → `PASS`.
+- `ok-single.query` + `ok-single.verdict`: `http` exports `get,post`; request `get` → `PASS`.
+- `err-missing.query` + `err-missing.verdict`: `fs` exports `read`; request `read,write` → `ERROR:cap-not-exported:write`.
+- `err-unknown-mod.query` + `err-unknown-mod.verdict`: module `db` not in registry → `ERROR:module-not-found:db`.
+- `ok-exact.query` + `ok-exact.verdict`: exact cap match (all caps requested, all present) → `PASS`.
+
+**Definition of done.**
+- `module.aven` implements all 7 functions; no `|>`, all `+` binary only.
+- `resolve` returns `PASS` for valid capability subsets and `ERROR:...` for violations.
+- `registry-lookup` returns caps string or `NOT_FOUND`.
+- `caps-contain` correctly identifies whether a cap is in a `,`-joined list.
+- All 5 fixtures present with hand-traced verdicts.
+
+**Out of scope.** DAG cycle detection, topological sort, `@pub` export enforcement, `@ctx` threading, multi-file module loading (all deferred to S2.7 driver).

@@ -1,0 +1,3 @@
+registry:math:add,sub,mul
+module:math
+caps:add,sub,mul

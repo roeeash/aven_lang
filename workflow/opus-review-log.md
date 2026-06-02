@@ -1450,3 +1450,7 @@ Rejected: read-kind fallback on malformed input, undefined var yielding Unknown,
 ## S2.3 — Round 2 (APPROVED)
 
 Both fixes verified: env-extend prepend produces correct shadow semantics (newest binding found first by env-scan); infer-if Unknown-cond allowance correct. No new bugs.
+
+## S2.4 — Round 1 (APPROVED)
+
+Module resolver clean first pass. All 5 fixtures trace correctly. Binary `+` throughout. Registry-scan/caps-scan handle empty registry, trailing `\n`, multi-line registry, partial module name matches correctly.

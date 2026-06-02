@@ -1,0 +1,3 @@
+registry:fs:read,write,list
+module:fs
+caps:read,write

@@ -1,1 +1,89 @@
 ; module.aven: Manage imports, exports, and module boundaries
+; Registry: \n-joined "modname:cap1,cap2\n" entries.
+; Caps: comma-joined "read,write,list".
+
+; Main entry: check that all requested caps are exported by modname
+@fn resolve :: registry:Str modname:Str requested:Str -> Str
+  @let caps :: (registry-lookup registry modname)
+  @if (@call str_eq caps "NOT_FOUND")
+    @then (+ "ERROR:module-not-found:" modname)
+    @else (check-caps caps requested)
+
+; Prepend modname:caps\n to registry (new modules shadow old)
+@fn registry-extend :: registry:Str modname:Str caps:Str -> Str
+  (+ modname (+ ":" (+ caps (+ "\n" registry))))
+
+; Look up modname in registry, return caps string or "NOT_FOUND"
+@fn registry-lookup :: registry:Str modname:Str -> Str
+  (registry-scan registry modname 0 (@call str_len registry))
+
+@fn registry-scan :: registry:Str modname:Str pos:Int len:Int -> Str
+  @if (@call int_ge pos len)
+    @then "NOT_FOUND"
+    @else
+      @let line-end :: (find-newline registry pos len)
+      @let end :: @if (@call int_eq line-end -1) @then len @else line-end
+      @let line :: (@call str_sub registry pos end)
+      @let colon-pos :: (find-char line ":" 0 (@call str_len line))
+      @if (@call int_eq colon-pos -1)
+        @then (registry-scan registry modname (+ end 1) len)
+        @else
+          @let line-name :: (@call str_sub line 0 colon-pos)
+          @if (@call str_eq line-name modname)
+            @then (@call str_sub line (+ colon-pos 1) (@call str_len line))
+            @else (registry-scan registry modname (+ end 1) len)
+
+@fn find-newline :: s:Str pos:Int len:Int -> Int
+  @if (@call int_ge pos len)
+    @then -1
+    @else
+      @let c :: (@call str_get s pos)
+      @if (@call str_eq c "\n")
+        @then pos
+        @else (find-newline s (+ pos 1) len)
+
+@fn find-char :: s:Str ch:Str pos:Int len:Int -> Int
+  @if (@call int_ge pos len)
+    @then -1
+    @else
+      @let c :: (@call str_get s pos)
+      @if (@call str_eq c ch)
+        @then pos
+        @else (find-char s ch (+ pos 1) len)
+
+; Check all requested caps (comma-joined) against available caps
+@fn check-caps :: available:Str requested:Str -> Str
+  @if (@call str_eq requested "")
+    @then "PASS"
+    @else (check-caps-loop available requested 0 (@call str_len requested))
+
+@fn check-caps-loop :: available:Str requested:Str pos:Int len:Int -> Str
+  @if (@call int_ge pos len)
+    @then "PASS"
+    @else
+      @let comma-pos :: (find-char requested "," pos len)
+      @let cap-end :: @if (@call int_eq comma-pos -1) @then len @else comma-pos
+      @let cap :: (@call str_sub requested pos cap-end)
+      @if (@call bool_not (caps-contain available cap))
+        @then (+ "ERROR:cap-not-exported:" cap)
+        @else
+          @let next-pos :: @if (@call int_eq comma-pos -1) @then len @else (+ comma-pos 1)
+          (check-caps-loop available requested next-pos len)
+
+; Check if needle is a comma-delimited cap in available caps string
+@fn caps-contain :: caps:Str needle:Str -> @Bool
+  (caps-scan caps needle 0 (@call str_len caps))
+
+@fn caps-scan :: caps:Str needle:Str pos:Int len:Int -> @Bool
+  @if (@call int_ge pos len)
+    @then @false
+    @else
+      @let comma-pos :: (find-char caps "," pos len)
+      @let cap-end :: @if (@call int_eq comma-pos -1) @then len @else comma-pos
+      @let cap :: (@call str_sub caps pos cap-end)
+      @if (@call str_eq cap needle)
+        @then @true
+        @else
+          @if (@call int_eq comma-pos -1)
+            @then @false
+            @else (caps-scan caps needle (+ comma-pos 1) len)

@@ -1,0 +1,3 @@
+registry:fs:read,write
+module:db
+caps:query
