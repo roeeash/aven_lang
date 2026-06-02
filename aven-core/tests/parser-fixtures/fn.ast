@@ -1,0 +1,1 @@
+(FnDef add ((a Int) (b Int)) (Ret (Arithmetic Add (Var a) (Var b))) Int [])

@@ -112,6 +112,86 @@ Full implementation spec for S2.1 is in **§"Active stage spec: S2.1"** below.
 | AST serializer | Canonical AST→`Str` printer so output is diffable against seed `emit-ast` |
 | Parity test | Parse every fixture; serialized AST matches the seed's |
 
+---
+
+## Active stage spec: S2.2 — Parser in AVEN
+
+**Goal.** Write an AVEN-language recursive-descent parser in `aven-core/parser.aven` that reads a token stream (from S2.1 lexer) and outputs a canonical AST as a `\n`-joined `Str` (per `AST_ENCODING.md`), with output matching the seed's `emit-ast` dump format exactly. The parser must recognize all AVEN expression forms within the frozen seed-AVEN subset and thread parser state (position, token stream, monotonic node counter) through all function returns — no mutable state, no closures.
+
+**Unblocked by S2.1.** The S2.1 lexer produces a `\n`-joined token stream in canonical format. The S2.0c seed supports tuple literals and destructuring, enabling multi-value returns for state threading. The S2.0b comparison/boolean primitives enable loop bounds and branch predicates for recursive descent.
+
+**Files touched.**
+- Primary: `aven-core/parser.aven` — the implementation (new file).
+- Test fixtures: `aven-core/tests/parser-fixtures/` (new) — golden `.aven` source files + expected `.ast` dump files (seed's `emit-ast` output for each).
+
+**Parser architecture.**
+
+Parser state is represented as a `(Int, Str)` tuple: position within the token stream (`Int`) and the token stream itself (`Str`, `\n`-joined). All parser functions return `(pos', ast)` tuples, threading state forward.
+
+- **Main entry point:** `@fn parse :: tokens:Str -> Str` — reads tokens, returns canonical AST (or error marker).
+- **State threading:** Each recursive function has signature `@fn name :: tokens:Str pos:Int -> (Int, Expr)` and returns `(next_pos, expr)`.
+- **Token consumption:** Use `str_get(tokens, eol_idx + 1)` to extract current line; scan for `\n` to find next line offset; advance position by line length.
+- **One-token lookahead:** Inspect current token before consuming it; handle prefix operators and keyword dispatch.
+- **Node ID allocation:** Global counter threaded as `Int` through all parse functions; incremented on each AST node creation.
+
+**Form priority (implement in order).**
+
+1. `Lit` (Int, Float, Str, Bool, Nil) — `(Int 42)`, `(Float 3.14)`, `(Str "...")`, `(Bool @true)`, `(Nil)`
+2. `Var` + `Symbol` — variable names, `#tag` symbols
+3. `Let` — `(Let name expr)`
+4. `FnDef` — `(FnDef name (params) body return-type effects [caps])`
+5. `FnCall` — `(FnCall name arg1 arg2 ...)`
+6. `Arithmetic` — `(Arithmetic Add left right)` from `(+ a b)` prefix syntax
+7. `If` — `(If cond then-branch else-branch)`
+8. `Ret` — `(Ret expr)`
+9. `Block` — sequence of expressions, `\n`-joined in `Str` form
+10. `Match` — `(Match scrutinee patterns-str)` with patterns as `TagBind tag var -> expr`
+11. `Tagged` — `(@ok v)` → `(Tagged ok (Just v))`
+12. `@uncertain`, `@intent` wrappers
+13. `Mod`, `Use`, `Pub` — module/use/pub declarations
+
+**Token parsing helpers.**
+
+- `@fn current-token :: tokens:Str pos:Int -> Str` — extract token at position (scan to `\n`; return line substring).
+- `@fn next-pos :: tokens:Str pos:Int -> Int` — find next position after current token (position of char after `\n`).
+- `@fn consume :: tokens:Str pos:Int -> (Int, Str)` — return current token and next position.
+- `@fn expect :: tokens:Str pos:Int kind:Str -> (Int, ())` — assert current token matches kind; error if not.
+
+**AST encoding output (per `AST_ENCODING.md`).**
+
+- Literals: `(Int 42)`, `(Float 3.14)`, `(Str "content")`, `(Bool true)`, `(Nil)`
+- Variables: `(Var x)`
+- Symbols: `(Symbol ok)`
+- FnDef: `(FnDef add ((a Int) (b Int)) (Ret (Arithmetic Add (Var a) (Var b))) Int [])`
+- FnCall: `(FnCall add (Int 1) (Int 2))`
+- If: `(If (Bool true) (Int 100) (Int 0))`
+- Arithmetic: `(Arithmetic Add (Int 1) (Int 2))`
+- Block: `(Block expr1\nexpr2\nexpr3)` — subexpressions as `\n`-joined `Str`
+- Match: `(Match scrutinee::(Var x) patterns::(TagBind ok v -> (Var v))\n(Wildcard -> (Int 0)))`
+
+**Test fixtures (source-level; no runtime harness yet).**
+
+- `literals.aven` → `literals.ast`: ints, floats, strings, bools, nil
+- `variables.aven` → `variables.ast`: var names, symbol tags
+- `let.aven` → `let.ast`: let bindings, nested lets
+- `fn-def.aven` → `fn-def.ast`: function definitions with type annotations, effects
+- `fn-call.aven` → `fn-call.ast`: function calls with multiple args
+- `arithmetic.aven` → `arithmetic.ast`: prefix `(+ a b)`, `(* (+ 1 2) 3)`, etc.
+- `if-then-else.aven` → `if-then-else.ast`: conditional branches, nested ifs
+- `match-patterns.aven` → `match-patterns.ast`: `@match` with `#tag` dispatch, `TagBind`, wildcard
+
+Hand-trace: for each fixture, seed-parse via `aven emit-ast <fixture> > seed.ast`, then verify the AVEN parser output matches line-for-line.
+
+**Definition of done (S2.2).**
+- `parser.aven` complete, conforms to `SUBSET.md` (no closures, prefix-only calls, state threading via tuples).
+- All 10 priority forms recognized and emitted in canonical AST format.
+- AST serializer produces span-elided S-expressions per `AST_ENCODING.md`.
+- All 8 test fixtures exist; `.ast` files prepared by hand-tracing against seed `emit-ast`.
+- Tuple state threading is idiomatic (no `|>`, no mutable records).
+- **Queued for runtime verification** (when `aven` binary exists): `parse(tokenize(source))` matches seed `emit-ast` over the `tests/integration.rs` corpus.
+
+**Out of scope.** Type checker, module resolver, evaluator, `@diff` engine; error recovery (parser emits best-effort AST); actual execution in sandbox.
+
 ### S2.3 — Type & effect checker in AVEN
 
 | Item | Notes |
@@ -357,7 +437,7 @@ Note: in the current sandbox `cargo`/`rustc` are unavailable and the network is 
 | S2.0 — bootstrap prerequisites | ✅ Done |
 | S2.0b — seed comparison & boolean primitives | ✅ Done |
 | **S2.1 — Lexer in AVEN** | ✅ Done |
-| S2.2 — Parser in AVEN | Pending |
+| S2.2 — Parser in AVEN | ✅ Done |
 | S2.3 — Type & effect checker | Pending |
 | S2.4 — Module resolver | Pending |
 | S2.5 — `@diff` engine | Pending |
@@ -365,3 +445,67 @@ Note: in the current sandbox `cargo`/`rustc` are unavailable and the network is 
 | S2.7 — Driver + CLI | Pending |
 | S2.8 — Self-hosting fixpoint | Pending |
 | S2.9 — Repo split & freeze | Pending |
+
+---
+
+### S2.2 — Parser in AVEN — **Done**
+
+**Outcome.** `aven-core/parser.aven` implements a recursive-descent parser consuming `\n`-joined token stream → canonical AST per `AST_ENCODING.md`. State threaded as `remaining:Str` through all 21 functions. Covers: literals, `Var`, `Let`, `FnDef`, `Ret`, `If`, arithmetic (`+-*/`), `FnCall`. Key fix: all string concat sites used n-ary `(+ a b c...)` — rewritten to nested binary form since seed `+` is strictly 2-operand. `parse-paren` fallthrough fixed to advance. 6 golden fixtures in `aven-core/tests/parser-fixtures/`. Opus approved Round 2. Runtime parity QUEUED when `aven` binary available.
+
+---
+
+## Active Stage spec (archived): S2.2 — Parser in AVEN
+
+**Goal.** Implement a recursive-descent parser in `aven-core/parser.aven` that consumes the S2.1 lexer's `\n`-joined token stream and produces a canonical `\n`-joined AST dump (per `AST_ENCODING.md`). The parser must run entirely within the frozen seed-AVEN subset: all state is threaded as a `remaining:Str` (the unparsed suffix of the token stream), no closures, all dispatch via top-level named recursive `@fn`.
+
+**Files touched.**
+- `aven-core/parser.aven` — new file, the implementation.
+- `aven-core/tests/parser-fixtures/*.aven` — 6 source files (new).
+- `aven-core/tests/parser-fixtures/*.ast` — 6 golden AST dumps (new).
+
+**Token stream representation.** Each token is one line. The parser threads `remaining:Str` — the unparsed suffix of the token stream. Two primitives (implemented as helpers):
+- `peek :: remaining:Str -> Str` — returns the text before the first `\n` (the current token kind+value).
+- `advance :: remaining:Str -> Str` — returns everything after the first `\n` (drops current token).
+- When `remaining` has no `\n`, `peek` returns `remaining` and `advance` returns `""`.
+
+**Specific changes — `parser.aven`:**
+- `@fn parse :: tokens:Str -> Str` — entry point: calls `parse-expr` then returns AST string.
+- `@fn parse-expr :: remaining:Str -> (Str, Str)` — dispatches on `(peek remaining)`:
+  - `"Let"` → `parse-let`
+  - `"Fn"` → `parse-fn`
+  - `"Ret"` → `parse-ret`
+  - `"If"` → `parse-if`
+  - `"Call"` → `parse-call` (inside `(@call fn args...)`)
+  - `"LeftParen"` → `parse-paren` (arithmetic op or tuple)
+  - `"Integer ..."` / `"Float ..."` / `"String ..."` / `"True"` / `"False"` → literal
+  - `"Ident ..."` → `Var <name>` or `#symbol`
+  - `"Match"` → `parse-match`
+  - `"Ret"` → `parse-ret`
+- Each `parse-X :: remaining:Str -> (ast:Str, remaining:Str)` returns (AST string, remaining tokens).
+- Token-kind matching: `str_sub` on the `peek` result to extract the kind prefix (compare against `"Integer"`, `"Ident"`, etc.).
+- `@fn parse-block :: remaining:Str -> (Str, Str)` — parses until `Eof` or unrecognized token, joins sub-ASTs with `\n`.
+
+**AST output format** (per `AST_ENCODING.md`):
+- Literals: `(Int 42)`, `(Float 3.14)`, `(Str "hello")`, `(Bool true)`.
+- Var: `(Var name)`. Symbol: `(Symbol tagname)`.
+- Let: `(Let name <expr>)`. Ret: `(Ret <expr>)`.
+- FnDef: `(FnDef name (<params>) <body> <return-type> <effects>)`.
+- If: `(If <cond> <then> <else>)`. Arithmetic: `(Arithmetic Add <l> <r>)`.
+- FnCall: `(FnCall name <arg1> <arg2>...)`.
+
+**Tests to add** (source-level, hand-traced against `aven emit-ast`):
+- `let.aven` + `let.ast`: `@let x :: 42` → `(Let x (Int 42))`.
+- `fn.aven` + `fn.ast`: `@fn add :: a:Int b:Int -> Int @ret (+ a b)` → full FnDef.
+- `if.aven` + `if.ast`: `@if @true @then 1 @else 0` → `(If (Bool true) (Int 1) (Int 0))`.
+- `call.aven` + `call.ast`: `(@call add 1 2)` → `(FnCall add (Int 1) (Int 2))`.
+- `arith.aven` + `arith.ast`: `(+ (* 2 3) 4)` → nested `Arithmetic`.
+- `block.aven` + `block.ast`: multi-statement block.
+
+**Definition of done.**
+- `parser.aven` parses under seed interpreter without error (source-level verified).
+- All 6 fixtures exist; `.ast` files hand-traced against seed `aven emit-ast`.
+- `parse-expr` covers: literals, `Var`, `Let`, `FnDef`, `Ret`, `If`, arithmetic, `FnCall`.
+- State threading: every `parse-X` returns `(ast, remaining)` — no global state.
+- No closures; all dispatch via named `@fn`.
+
+**Out of scope.** `@match`, `@err`/`@ok`, `@mod`/`@use`/`@pub`, `@diff`, `@intent`, `@uncertain`, `@ctx` (defer to later parse passes); error recovery (best-effort); runtime parity test (QUEUED when binary available).

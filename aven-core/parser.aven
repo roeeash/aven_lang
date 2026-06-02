@@ -1,1 +1,226 @@
-; parser.aven: Convert Token stream into Expr AST
+; AVEN Parser (S2.2) — recursive-descent parser for token stream → canonical AST
+; Consumes \n-joined token stream from S2.1 lexer; threads remaining:Str state.
+; Output: canonical AST per AST_ENCODING.md, span-elided S-expression format.
+
+; Main entry point: parse token stream to AST string
+@fn parse :: tokens:Str -> Str
+  @let (ast, _) :: (parse-block tokens "")
+  ast
+
+; Parse a sequence of top-level expressions until Eof
+@fn parse-block :: remaining:Str acc:Str -> (Str, Str)
+  @let tok :: (peek remaining)
+  @if (@call str_eq tok "Eof")
+    @then (acc (advance remaining))
+    @else
+      @if (@call str_eq tok "")
+        @then (acc remaining)
+        @else
+          @let (expr-ast, after-expr) :: (parse-expr remaining)
+          @let new-acc :: (if-empty acc expr-ast (+ acc (+ "\n" expr-ast)))
+          (parse-block after-expr new-acc)
+
+; Extract current token (text before first \n, or all if no \n)
+@fn peek :: remaining:Str -> Str
+  @let nl_pos :: (find-newline remaining 0 (@call str_len remaining))
+  @if (@call int_eq nl_pos -1)
+    @then remaining
+    @else (@call str_sub remaining 0 nl_pos)
+
+; Find first \n position (returns -1 if not found)
+@fn find-newline :: s:Str pos:Int len:Int -> Int
+  @if (@call int_ge pos len)
+    @then -1
+    @else
+      @let c :: (@call str_get s pos)
+      @if (@call str_eq c "\n")
+        @then pos
+        @else (find-newline s (+ pos 1) len)
+
+; Advance past current token
+@fn advance :: remaining:Str -> Str
+  @let nl_pos :: (find-newline remaining 0 (@call str_len remaining))
+  @if (@call int_eq nl_pos -1)
+    @then ""
+    @else (@call str_sub remaining (+ nl_pos 1) (@call str_len remaining))
+
+; Check if token starts with a prefix (for data-bearing tokens like "Integer 42")
+@fn starts-with :: s:Str prefix:Str -> @Bool
+  @let plen :: (@call str_len prefix)
+  @let slen :: (@call str_len s)
+  @if (@call int_gt plen slen)
+    @then @false
+    @else (@call str_eq (@call str_sub s 0 plen) prefix)
+
+; Extract data part of "Kind value" token (everything after "Kind ")
+@fn token-data :: tok:Str kind:Str -> Str
+  @let klen :: (+ (@call str_len kind) 1)
+  (@call str_sub tok klen (@call str_len tok))
+
+; Add separator only if acc is non-empty
+@fn if-empty :: s:Str then-val:Str else-val:Str -> Str
+  @if (@call str_eq s "")
+    @then then-val
+    @else else-val
+
+; Dispatch on current token kind
+@fn parse-expr :: remaining:Str -> (Str, Str)
+  @let tok :: (peek remaining)
+  @if (@call str_eq tok "Let")
+    @then (parse-let (advance remaining))
+    @else
+      @if (@call str_eq tok "Fn")
+        @then (parse-fn (advance remaining))
+        @else
+          @if (@call str_eq tok "Ret")
+            @then (parse-ret (advance remaining))
+            @else
+              @if (@call str_eq tok "If")
+                @then (parse-if (advance remaining))
+                @else
+                  @if (@call str_eq tok "LeftParen")
+                    @then (parse-paren (advance remaining))
+                    @else
+                      (parse-atom remaining)
+
+; Atoms: Integer, Float, String, True, False, Ident, Symbol
+@fn parse-atom :: remaining:Str -> (Str, Str)
+  @let tok :: (peek remaining)
+  @if (starts-with tok "Integer ")
+    @then ((+ "(Int " (+ (token-data tok "Integer") ")")) (advance remaining))
+    @else
+      @if (starts-with tok "Float ")
+        @then ((+ "(Float " (+ (token-data tok "Float") ")")) (advance remaining))
+        @else
+          @if (starts-with tok "String ")
+            @then ((+ "(Str " (+ (token-data tok "String") ")")) (advance remaining))
+            @else
+              @if (@call str_eq tok "True")
+                @then ("(Bool true)" (advance remaining))
+                @else
+                  @if (@call str_eq tok "False")
+                    @then ("(Bool false)" (advance remaining))
+                    @else
+                      @if (starts-with tok "Ident ")
+                        @then (parse-ident tok (advance remaining))
+                        @else ("(Unknown)" (advance remaining))
+
+; Ident: could be Var or #symbol
+@fn parse-ident :: tok:Str remaining:Str -> (Str, Str)
+  @let name :: (token-data tok "Ident")
+  @if (starts-with name "#")
+    @then ((+ "(Symbol " (+ (@call str_sub name 1 (@call str_len name)) ")")) remaining)
+    @else ((+ "(Var " (+ name ")")) remaining)
+
+; @let name :: expr
+@fn parse-let :: remaining:Str -> (Str, Str)
+  @let name-tok :: (peek remaining)
+  @let name :: (token-data name-tok "Ident")
+  @let after-name :: (advance remaining)
+  ; expect DoubleColon
+  @let after-dc :: (advance after-name)
+  @let (expr-ast, after-expr) :: (parse-expr after-dc)
+  ((+ "(Let " (+ name (+ " " (+ expr-ast ")")))) after-expr)
+
+; @ret expr
+@fn parse-ret :: remaining:Str -> (Str, Str)
+  @let (expr-ast, after-expr) :: (parse-expr remaining)
+  ((+ "(Ret " (+ expr-ast ")")) after-expr)
+
+; @if cond @then t @else e
+@fn parse-if :: remaining:Str -> (Str, Str)
+  @let (cond-ast, after-cond) :: (parse-expr remaining)
+  ; expect Then
+  @let after-then-kw :: (advance after-cond)
+  @let (then-ast, after-then) :: (parse-expr after-then-kw)
+  ; expect Else
+  @let after-else-kw :: (advance after-then)
+  @let (else-ast, after-else) :: (parse-expr after-else-kw)
+  ((+ "(If " (+ cond-ast (+ " " (+ then-ast (+ " " (+ else-ast ")")))))) after-else)
+
+; (op a b) or (@call fn args...)
+@fn parse-paren :: remaining:Str -> (Str, Str)
+  @let tok :: (peek remaining)
+  @if (@call str_eq tok "Plus")
+    @then (parse-arith "Add" (advance remaining))
+    @else
+      @if (@call str_eq tok "Minus")
+        @then (parse-arith "Sub" (advance remaining))
+        @else
+          @if (@call str_eq tok "Star")
+            @then (parse-arith "Mul" (advance remaining))
+            @else
+              @if (@call str_eq tok "Slash")
+                @then (parse-arith "Div" (advance remaining))
+                @else
+                  @if (@call str_eq tok "Call")
+                    @then (parse-call (advance remaining))
+                    @else ("(Unknown)" (advance remaining))
+
+; (Arithmetic Op left right) — after consuming op token
+@fn parse-arith :: op:Str remaining:Str -> (Str, Str)
+  @let (left-ast, after-left) :: (parse-expr remaining)
+  @let (right-ast, after-right) :: (parse-expr after-left)
+  ; consume RightParen
+  @let after-rp :: (advance after-right)
+  ((+ "(Arithmetic " (+ op (+ " " (+ left-ast (+ " " (+ right-ast ")")))))) after-rp)
+
+; (@call fn arg1 arg2...) — consumes args until RightParen
+@fn parse-call :: remaining:Str -> (Str, Str)
+  @let fn-tok :: (peek remaining)
+  @let fn-name :: (token-data fn-tok "Ident")
+  @let after-fn :: (advance remaining)
+  @let (args-ast, after-args) :: (parse-call-args after-fn "")
+  ((+ "(FnCall " (+ fn-name (+ args-ast ")"))) after-args)
+
+@fn parse-call-args :: remaining:Str acc:Str -> (Str, Str)
+  @let tok :: (peek remaining)
+  @if (@call str_eq tok "RightParen")
+    @then (acc (advance remaining))
+    @else
+      @let (arg-ast, after-arg) :: (parse-expr remaining)
+      (parse-call-args after-arg (+ acc (+ " " arg-ast)))
+
+; @fn name :: params -> RetType body
+@fn parse-fn :: remaining:Str -> (Str, Str)
+  @let name-tok :: (peek remaining)
+  @let fn-name :: (token-data name-tok "Ident")
+  @let after-name :: (advance remaining)
+  ; expect DoubleColon
+  @let after-dc :: (advance after-name)
+  @let (params-str, after-params) :: (parse-params after-dc "")
+  ; after-params is at Arrow or EffectArrow
+  @let after-arrow :: (advance after-params)
+  ; optional return type (Ident)
+  @let (ret-type, after-ret) :: (parse-return-type after-arrow)
+  @let (body-ast, after-body) :: (parse-expr after-ret)
+  ((+ "(FnDef " (+ fn-name (+ " (" (+ params-str (+ ") " (+ body-ast (+ " " (+ ret-type " [])")))))))) after-body)
+
+@fn parse-params :: remaining:Str acc:Str -> (Str, Str)
+  @let tok :: (peek remaining)
+  @if (@call bool_or (@call str_eq tok "Arrow") (starts-with tok "EffectArrow"))
+    @then (acc remaining)
+    @else
+      @if (starts-with tok "Ident ")
+        @then
+          @let param-name :: (token-data tok "Ident")
+          @let after-name :: (advance remaining)
+          @let colon-tok :: (peek after-name)
+          @if (@call str_eq colon-tok "Colon")
+            @then
+              @let after-colon :: (advance after-name)
+              @let type-tok :: (peek after-colon)
+              @let type-name :: (token-data type-tok "Ident")
+              @let after-type :: (advance after-colon)
+              @let new-acc :: (+ acc (+ (if-empty acc "" " ") (+ "(" (+ param-name (+ " " (+ type-name ")"))))))
+              (parse-params after-type new-acc)
+            @else
+              @let new-acc :: (+ acc (+ (if-empty acc "" " ") (+ "(" (+ param-name ")"))))
+              (parse-params after-name new-acc)
+        @else (acc remaining)
+
+@fn parse-return-type :: remaining:Str -> (Str, Str)
+  @let tok :: (peek remaining)
+  @if (starts-with tok "Ident ")
+    @then ((token-data tok "Ident") (advance remaining))
+    @else ("(Nil)" remaining)

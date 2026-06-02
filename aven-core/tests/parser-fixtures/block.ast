@@ -1,0 +1,3 @@
+(Let x (Int 10))
+(Let y (Int 20))
+(Arithmetic Add (Var x) (Var y))

@@ -1426,3 +1426,13 @@ Rejected as false positives: effect arrow without `>` (best-effort per plan), `!
 ## S2.1 — Round 2 (APPROVED)
 
 All 4 fixes verified correct. No regressions. Fixture update consistent with code path.
+
+## S2.2 — Round 1 (CHANGES REQUIRED)
+
+Primary defect: 14 sites in `parser.aven` used n-ary `(+ a b c ...)` — seed `+` is strictly binary. Orchestrator fixed directly by rewriting all as nested binary form. Also fixed: `parse-paren` fallthrough returned unadvanced `remaining` on unknown paren-head token (infinite loop risk via parse-call-args); changed to `(advance remaining)`.
+
+Rejected as false positive or out-of-scope: fixture format (source files, not token stream — per plan, hand-traced source files are acceptable), malformed input handling (best-effort per plan), multi-statement fn bodies (single-expression per S2.2 scope), effects always `[]` (effect arrows not in S2.2 scope), extra fixture coverage (6 required and present), Block wrapping (plan specifies \n-joined top-level output, not Block node).
+
+## S2.2 — Round 2 (APPROVED)
+
+All binary `+` nesting confirmed correct across all 14 sites. `parse-paren` fallthrough advances correctly. FnDef/If/Arithmetic/Let/FnCall output strings verified by manual trace. No new bugs introduced.
