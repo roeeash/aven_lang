@@ -441,7 +441,7 @@ Note: in the current sandbox `cargo`/`rustc` are unavailable and the network is 
 | S2.3 — Type & effect checker | ✅ Done |
 | S2.4 — Module resolver | ✅ Done |
 | S2.5 — `@diff` engine | ✅ Done |
-| S2.6 — Evaluator (backend) | Pending |
+| S2.6 — Evaluator (backend) | ✅ Done |
 | S2.7 — Driver + CLI | Pending |
 | S2.8 — Self-hosting fixpoint | Pending |
 | S2.9 — Repo split & freeze | Pending |
@@ -627,3 +627,63 @@ Three `\n`-separated lines: registry string, modname, requested caps. The resolv
 ### S2.5 — `@diff` engine in AVEN — **Done**
 
 **Outcome.** `aven-core/diff.aven` implements selector-based AST-line replacement (11 functions). Selectors `"fn name"` match `(FnDef name ...)` and `"let name"` match `(Let name ...)`. `scan-and-replace` threads `found:@Bool` to replace only the FIRST match — Haiku reviewer caught that subsequent matching lines were also replaced (fixed: guard with `bool_and(bool_not found, matches-selector)`). `if-acc-empty` handles leading-newline correctly. Opus approved Round 1. 4 golden fixtures. Runtime parity QUEUED.
+
+---
+
+## Active Stage: S2.6 — Evaluator in AVEN
+
+**Goal.** Implement a tree-walking evaluator in `aven-core/eval.aven` that consumes a canonical AST string (S2.2 parser output, `\n`-joined S-expressions) and produces a result value string. Scope: evaluate literals, `Var` lookup, `Let` binding, arithmetic (`+ - * /`), `If`, `Ret`, and `FnCall` (user-defined functions in env). The evaluator threads an environment string (same `name:value\n` pattern from S2.3). No closures in AVEN output; all iteration via recursive `@fn`.
+
+**Files touched.**
+- `aven-core/eval.aven` — evaluator implementation (replaces stub).
+- `aven-core/tests/eval-fixtures/*.ast` — 5 AST input files (new).
+- `aven-core/tests/eval-fixtures/*.value` — 5 expected value files (new).
+
+**Value representation.** Results are strings. Primitives: `"42"` (Int), `"3.14"` (Float), `"hello"` (Str — raw, no quotes), `"true"`/`"false"` (Bool). No compound value types for S2.6 scope.
+
+**Environment representation.** Same as S2.3: `\n`-joined `name:value\n` entries, prepended on extend (newest first). Values stored as their string form.
+
+**Specific changes — `eval.aven`:**
+- `@fn eval :: ast:Str -> Str` — entry: calls `eval-block ast ""`, returns last computed value.
+- `@fn eval-block :: ast:Str env:Str -> Str` — processes lines sequentially; for `Let` bindings, threads new env; returns final value.
+- `@fn eval-node :: line:Str env:Str -> (Str, Str)` — returns `(value, updated-env)` for one AST line. Dispatch on node kind:
+  - `(Int N)` → `"N"` (the integer string).
+  - `(Float F)` → `"F"`.
+  - `(Str "s")` → `"s"` (strip outer quotes).
+  - `(Bool true)` / `(Bool false)` → `"true"` / `"false"`.
+  - `(Var name)` → `env-lookup env name` (from S2.3 pattern, re-implemented here).
+  - `(Let name expr)` → eval expr, extend env with `name:value`, return value.
+  - `(Ret expr)` → eval inner expr, return value.
+  - `(If cond then else)` → eval cond; if `"true"` eval then, else eval else.
+  - `(Arithmetic op left right)` → eval both, apply op (int arithmetic for Int values).
+  - default → `"unknown"`.
+- **Arithmetic**: parse both operand values as integers via `str-to-int` helper (digit-by-digit), apply op, format back to string with `int-to-str`. Support `Add`/`Sub`/`Mul`/`Div`.
+- **Sub-expression evaluation**: `(Let x (Int 42))` — `node-content` gives `"x (Int 42)"`. Split on first space to get name; the rest is the sub-expression line. Call `eval-node` recursively on the sub-expression line.
+
+**Helper functions:**
+- `str-to-int :: s:Str -> Int` — convert digit string to Int (recursive, position-based).
+- `int-to-str :: n:Int -> Str` — convert Int to digit string (recursive, divide-by-10).
+- Reuse `peek`/`advance`/`find-newline`/`starts-with`/`node-kind`/`node-content`/`find-space` (copy from prior stages).
+- `env-lookup`/`env-extend` (same pattern as S2.3, re-implemented).
+
+**Tests to add** (hand-traced):
+- `lit-int.ast` + `lit-int.value`: `(Int 42)` → `"42"`.
+- `arith.ast` + `arith.value`: `(Arithmetic Add (Int 3) (Int 4))` → `"7"`.
+- `let-var.ast` + `let-var.value`: `(Let x (Int 10))\n(Var x)` → `"10"`.
+- `if-true.ast` + `if-true.value`: `(If (Bool true) (Int 1) (Int 0))` → `"1"`.
+- `nested.ast` + `nested.value`: `(Arithmetic Mul (Arithmetic Add (Int 2) (Int 3)) (Int 4))` → `"20"`.
+
+**Definition of done.**
+- `eval.aven` complete; no `|>`, all `+` binary only.
+- `eval-node` dispatches on: Int, Float, Str, Bool, Var, Let, Ret, If, Arithmetic.
+- `str-to-int` and `int-to-str` work for non-negative integers (negative TBD).
+- All 5 fixtures present with hand-traced values.
+- `eval-block` correctly threads env across `Let` bindings so `Var` lookup works.
+
+**Out of scope.** FnDef/FnCall evaluation (no closure support needed for S2.6 scope), `@match`, stdlib bridging, negative integer parsing, floating-point arithmetic.
+
+---
+
+### S2.6 — Evaluator in AVEN — **Done**
+
+**Outcome.** `aven-core/eval.aven` implements a tree-walking evaluator (31 functions) consuming canonical AST strings. Threads `name:value\n` environment via `env-extend`/`env-lookup`. Evaluates: Int/Float/Str/Bool literals, Var lookup, Let binding, Ret, If, Arithmetic (+/-/*//). Integer ↔ string conversion via `str-to-int`/`int-to-str` (digit-by-digit loops). `scan-to-close` correctly handles nested parentheses for nested arithmetic evaluation. Opus approved Round 1 (clean pass). 5 golden fixtures. Runtime parity QUEUED.

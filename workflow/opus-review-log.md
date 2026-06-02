@@ -1458,3 +1458,7 @@ Module resolver clean first pass. All 5 fixtures trace correctly. Binary `+` thr
 ## S2.5 — Round 1 (APPROVED)
 
 Haiku reviewer caught duplicate-match bug (found=@true not checked before matches-selector, so second matching line also got replaced). Orchestrator fixed directly: guard with bool_and(bool_not found, matches-selector). Opus approved. All string concat uses binary + form.
+
+## S2.6 — Round 1 (APPROVED)
+
+AVEN evaluator clean first pass. All 5 fixtures trace correctly: lit-int=42, arith=7, let-var=10, if-true=1, nested Mul(Add(2,3),4)=20. Env threading correct; str-to-int/int-to-str digit loops trace correctly; scan-to-close handles depth-2 nesting for nested arithmetic. No defects.

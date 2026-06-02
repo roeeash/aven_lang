@@ -1,1 +1,254 @@
 ; eval.aven: Execute AST with environment and context tracking
+
+; ============ Standard Helpers (copied from S2.3–S2.5) ============
+
+@fn peek :: remaining:Str -> Str
+  @let nl_pos :: (find-newline remaining 0 (@call str_len remaining))
+  @if (@call int_eq nl_pos -1) @then remaining @else (@call str_sub remaining 0 nl_pos)
+
+@fn advance :: remaining:Str -> Str
+  @let nl_pos :: (find-newline remaining 0 (@call str_len remaining))
+  @if (@call int_eq nl_pos -1) @then "" @else (@call str_sub remaining (+ nl_pos 1) (@call str_len remaining))
+
+@fn find-newline :: s:Str pos:Int len:Int -> Int
+  @if (@call int_ge pos len) @then -1
+  @else
+    @let c :: (@call str_get s pos)
+    @if (@call str_eq c "\n") @then pos @else (find-newline s (+ pos 1) len)
+
+@fn starts-with :: s:Str prefix:Str -> @Bool
+  @let plen :: (@call str_len prefix)
+  @let slen :: (@call str_len s)
+  @if (@call int_gt plen slen) @then @false
+  @else (@call str_eq (@call str_sub s 0 plen) prefix)
+
+@fn node-kind :: line:Str -> Str
+  @if (@call str_eq line "") @then ""
+  @else
+    @let after-paren :: (@call str_sub line 1 (@call str_len line))
+    (read-kind after-paren 0 (@call str_len after-paren))
+
+@fn read-kind :: s:Str pos:Int len:Int -> Str
+  @if (@call int_ge pos len) @then s
+  @else
+    @let c :: (@call str_get s pos)
+    @if (@call bool_or (@call str_eq c " ") (@call str_eq c ")"))
+      @then (@call str_sub s 0 pos)
+      @else (read-kind s (+ pos 1) len)
+
+@fn node-content :: line:Str kind:Str -> Str
+  @let start :: (+ (@call str_len kind) 2)
+  @let end :: (- (@call str_len line) 1)
+  @if (@call int_lt end start) @then "" @else (@call str_sub line start end)
+
+@fn find-space :: s:Str pos:Int len:Int -> Int
+  @if (@call int_ge pos len) @then len
+  @else
+    @let c :: (@call str_get s pos)
+    @if (@call str_eq c " ") @then pos @else (find-space s (+ pos 1) len)
+
+@fn find-paren-end :: s:Str pos:Int len:Int -> Int
+  @if (@call int_ge pos len) @then len
+  @else
+    @let c :: (@call str_get s pos)
+    @if (@call str_eq c "(") @then (scan-to-close s (+ pos 1) len 1)
+    @else (find-paren-end s (+ pos 1) len)
+
+@fn scan-to-close :: s:Str pos:Int len:Int depth:Int -> Int
+  @if (@call int_ge pos len) @then len
+  @else
+    @let c :: (@call str_get s pos)
+    @if (@call str_eq c ")")
+      @then @if (@call int_eq depth 1) @then (+ pos 1) @else (scan-to-close s (+ pos 1) len (- depth 1))
+      @else @if (@call str_eq c "(")
+        @then (scan-to-close s (+ pos 1) len (+ depth 1))
+        @else (scan-to-close s (+ pos 1) len depth)
+
+; ============ Environment Helpers (S2.3 pattern) ============
+
+@fn env-extend :: env:Str name:Str val:Str -> Str
+  (+ name (+ ":" (+ val (+ "\n" env))))
+
+@fn env-lookup :: env:Str name:Str -> Str
+  (env-scan env name 0 (@call str_len env))
+
+@fn env-scan :: env:Str name:Str pos:Int len:Int -> Str
+  @if (@call int_ge pos len) @then "undefined"
+  @else
+    @let line-end :: (find-newline env pos len)
+    @let end :: @if (@call int_eq line-end -1) @then len @else line-end
+    @let line :: (@call str_sub env pos end)
+    @let colon-pos :: (find-colon line 0 (@call str_len line))
+    @if (@call int_eq colon-pos -1)
+      @then (env-scan env name (+ end 1) len)
+      @else
+        @let line-name :: (@call str_sub line 0 colon-pos)
+        @if (@call str_eq line-name name)
+          @then (@call str_sub line (+ colon-pos 1) (@call str_len line))
+          @else (env-scan env name (+ end 1) len)
+
+@fn find-colon :: s:Str pos:Int len:Int -> Int
+  @if (@call int_ge pos len) @then -1
+  @else
+    @let c :: (@call str_get s pos)
+    @if (@call str_eq c ":") @then pos @else (find-colon s (+ pos 1) len)
+
+; ============ Integer Conversion Helpers ============
+
+; Convert digit string to integer (non-negative only)
+@fn str-to-int :: s:Str -> Int
+  (str-to-int-loop s 0 (@call str_len s) 0)
+
+@fn str-to-int-loop :: s:Str pos:Int len:Int acc:Int -> Int
+  @if (@call int_ge pos len) @then acc
+  @else
+    @let c :: (@call str_get s pos)
+    @let digit :: (char-to-digit c)
+    (str-to-int-loop s (+ pos 1) len (+ (* acc 10) digit))
+
+@fn char-to-digit :: c:Str -> Int
+  @if (@call str_eq c "0") @then 0
+  @else @if (@call str_eq c "1") @then 1
+  @else @if (@call str_eq c "2") @then 2
+  @else @if (@call str_eq c "3") @then 3
+  @else @if (@call str_eq c "4") @then 4
+  @else @if (@call str_eq c "5") @then 5
+  @else @if (@call str_eq c "6") @then 6
+  @else @if (@call str_eq c "7") @then 7
+  @else @if (@call str_eq c "8") @then 8
+  @else @if (@call str_eq c "9") @then 9
+  @else 0
+
+; Convert integer to string (non-negative)
+@fn int-to-str :: n:Int -> Str
+  @if (@call int_eq n 0) @then "0"
+  @else (int-to-str-loop n "")
+
+@fn int-to-str-loop :: n:Int acc:Str -> Str
+  @if (@call int_eq n 0) @then acc
+  @else
+    @let digit :: (int-mod n 10)
+    @let rest :: (int-div n 10)
+    (int-to-str-loop rest (+ (digit-to-char digit) acc))
+
+@fn int-mod :: n:Int d:Int -> Int
+  (- n (* d (int-div n d)))
+
+@fn int-div :: n:Int d:Int -> Int
+  (/ n d)
+
+@fn digit-to-char :: d:Int -> Str
+  @if (@call int_eq d 0) @then "0"
+  @else @if (@call int_eq d 1) @then "1"
+  @else @if (@call int_eq d 2) @then "2"
+  @else @if (@call int_eq d 3) @then "3"
+  @else @if (@call int_eq d 4) @then "4"
+  @else @if (@call int_eq d 5) @then "5"
+  @else @if (@call int_eq d 6) @then "6"
+  @else @if (@call int_eq d 7) @then "7"
+  @else @if (@call int_eq d 8) @then "8"
+  @else @if (@call int_eq d 9) @then "9"
+  @else "?"
+
+; ============ Main Evaluator ============
+
+@fn eval :: ast:Str -> Str
+  (eval-block ast "")
+
+@fn eval-block :: ast:Str env:Str -> Str
+  @let line :: (peek ast)
+  @if (@call str_eq line "")
+    @then "undefined"
+    @else
+      @let (val, new-env) :: (eval-node line env)
+      @let rest :: (advance ast)
+      @if (@call str_eq (peek rest) "")
+        @then val
+        @else (eval-block rest new-env)
+
+@fn eval-node :: line:Str env:Str -> (Str, Str)
+  @let kind :: (node-kind line)
+  @if (@call str_eq kind "Int")
+    @then ((node-content line "Int") env)
+    @else
+      @if (@call str_eq kind "Float")
+        @then ((node-content line "Float") env)
+        @else
+          @if (@call str_eq kind "Str")
+            @then (eval-str-literal line env)
+            @else
+              @if (@call str_eq kind "Bool")
+                @then ((node-content line "Bool") env)
+                @else
+                  @if (@call str_eq kind "Var")
+                    @then ((env-lookup env (node-content line "Var")) env)
+                    @else
+                      @if (@call str_eq kind "Let")
+                        @then (eval-let line env)
+                        @else
+                          @if (@call str_eq kind "Ret")
+                            @then (eval-ret line env)
+                            @else
+                              @if (@call str_eq kind "If")
+                                @then (eval-if line env)
+                                @else
+                                  @if (@call str_eq kind "Arithmetic")
+                                    @then (eval-arith line env)
+                                    @else ("unknown" env)
+
+; Strip outer quotes from Str literal: (Str "hello") → "hello" (raw)
+@fn eval-str-literal :: line:Str env:Str -> (Str, Str)
+  @let content :: (node-content line "Str")
+  @let slen :: (@call str_len content)
+  @if (@call int_lt slen 2)
+    @then (content env)
+    @else ((@call str_sub content 1 (- slen 1)) env)
+
+@fn eval-let :: line:Str env:Str -> (Str, Str)
+  @let content :: (node-content line "Let")
+  @let sp :: (find-space content 0 (@call str_len content))
+  @let name :: (@call str_sub content 0 sp)
+  @let val-expr :: (@call str_sub content (+ sp 1) (@call str_len content))
+  @let (val, _) :: (eval-node val-expr env)
+  @let new-env :: (env-extend env name val)
+  (val new-env)
+
+@fn eval-ret :: line:Str env:Str -> (Str, Str)
+  @let inner :: (node-content line "Ret")
+  @let (val, _) :: (eval-node inner env)
+  (val env)
+
+@fn eval-if :: line:Str env:Str -> (Str, Str)
+  @let content :: (node-content line "If")
+  @let cond-end :: (find-paren-end content 0 (@call str_len content))
+  @let cond-expr :: (@call str_sub content 0 cond-end)
+  @let (cond-val, _) :: (eval-node cond-expr env)
+  @let rest :: (@call str_sub content (+ cond-end 1) (@call str_len content))
+  @let then-end :: (find-paren-end rest 0 (@call str_len rest))
+  @let then-expr :: (@call str_sub rest 0 then-end)
+  @let else-expr :: (@call str_sub rest (+ then-end 1) (@call str_len rest))
+  @if (@call str_eq cond-val "true")
+    @then (eval-node then-expr env)
+    @else (eval-node else-expr env)
+
+@fn eval-arith :: line:Str env:Str -> (Str, Str)
+  @let content :: (node-content line "Arithmetic")
+  @let sp1 :: (find-space content 0 (@call str_len content))
+  @let op :: (@call str_sub content 0 sp1)
+  @let after-op :: (@call str_sub content (+ sp1 1) (@call str_len content))
+  @let left-end :: (find-paren-end after-op 0 (@call str_len after-op))
+  @let left-expr :: (@call str_sub after-op 0 left-end)
+  @let right-expr :: (@call str_sub after-op (+ left-end 1) (@call str_len after-op))
+  @let (left-val, _) :: (eval-node left-expr env)
+  @let (right-val, _) :: (eval-node right-expr env)
+  @let l :: (str-to-int left-val)
+  @let r :: (str-to-int right-val)
+  @let result :: (apply-op op l r)
+  ((int-to-str result) env)
+
+@fn apply-op :: op:Str l:Int r:Int -> Int
+  @if (@call str_eq op "Add") @then (+ l r)
+  @else @if (@call str_eq op "Sub") @then (- l r)
+  @else @if (@call str_eq op "Mul") @then (* l r)
+  @else @if (@call str_eq op "Div") @then (/ l r)
+  @else 0
