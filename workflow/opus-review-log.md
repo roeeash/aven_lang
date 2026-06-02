@@ -1408,3 +1408,21 @@ OPUS VERDICT: APPROVED
 
 ## S2.0c — Round 2 (APPROVED)
 All 11 fixes confirmed. 503 integration tests + 169 unit tests pass. Brace balance = 0 on all key files.
+
+## S2.1 — Round 1 (CHANGES REQUIRED)
+
+18 concerns reported. Orchestrator accepted 4 as real, rejected 14 as out-of-scope or false positives.
+
+Real bugs fixed:
+1. `read-negative-number` only emitted `Integer -<n>`, no path for negative floats → fixed to dispatch to `read-float`/`read-exponent`
+2. `read-digits-loop` kept `_` literally → `1_000` emitted `Integer 1_000` → fixed to skip underscores
+3. `read-ident-loop` didn't accept `_` as continuation char → `next_pos` couldn't be tokenized → fixed
+4. SUBSET.md missing S2.0b builtins (`bool_or`, `str_le`, `int_ge`, etc.) → documented
+
+Orchestrator also fixed: `floats.tokens` fixture had `Float 2e+1` for input `2.0E+1`; corrected to `Float 2.0e+1` by manual trace.
+
+Rejected as false positives: effect arrow without `>` (best-effort per plan), `!`/`~` standalone tokens (not in AVEN token set), string re-escaping (best-effort), architecture concerns, additional fixtures beyond 8 required.
+
+## S2.1 — Round 2 (APPROVED)
+
+All 4 fixes verified correct. No regressions. Fixture update consistent with code path.

@@ -138,6 +138,19 @@ All string comparisons use lexicographic Unicode ordering (applies to single-cha
 
 **Source verification**: `src/eval.rs` lines 2113–2191, matching on `(Value::Str(a), Value::Str(b))`.
 
+### S2.0b Builtin Summary
+
+The following builtins were added in stage S2.0b and are available in the seed evaluator:
+
+| Category | Functions |
+|---|---|
+| Integer Comparison | `int_eq`, `int_lt`, `int_gt`, `int_le`, `int_ge` |
+| Boolean Logic | `bool_and`, `bool_or`, `bool_not` |
+| String Ordering | `str_lt`, `str_gt`, `str_le`, `str_ge` |
+| String Primitives (earlier stage) | `str_eq`, `str_get`, `str_len`, `str_sub` |
+
+**Note**: String comparison operators use lexicographic Unicode ordering consistent with `str_eq`.
+
 ## Dialect Table Summary
 
 | Feature | Supported | Reference |

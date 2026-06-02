@@ -271,7 +271,39 @@ Note: in the current sandbox `cargo`/`rustc` are unavailable and the network is 
 
 ---
 
-## Active Stage: S2.1 — Lexer in AVEN
+### S2.1 — Lexer in AVEN — **Done**
+
+**Outcome.** `aven-core/lexer.aven` implements a complete AVEN-language lexer in the frozen seed-AVEN subset. State is threaded via `(Int, Str)` tuple returns using S2.0c syntax. All token kinds handled via recursive `@fn` dispatch with no closures, no mutable state, no `|>`. Key fixes required during review: tuple destructuring replacing `|>` and bare `@[n]` indexing; consistent `read-ident-loop` return type (raw ident, no prefix); negative floats dispatched to `read-float`/`read-exponent`; underscore stripping in numeric literals; underscore accepted as ident continuation. All 8 golden fixtures in `aven-core/tests/lexer-fixtures/`. SUBSET.md updated with S2.0b builtin summary. Opus approved Round 2. Runtime parity verification (against seed `emit-tokens`) QUEUED when `aven` binary available.
+
+### S2.0c — Seed tuple + string builtins — **Done**
+
+**Outcome.** `Expr::Tuple(Vec<Expr>, NodeId, SourceSpan)` and `Expr::TupleIndex { tuple, index, node_id, span }` added to AST. `Value::Tuple(Vec<Value>)` and `EvalError::IndexOutOfBounds { index, length }` added to eval. Parser recognizes `(a b)` and `(a, b)` tuple literals, `@[n]` postfix indexing, and `@let (a, b) :: expr` destructuring (desugared to Block+Let+TupleIndex). `str_eq` confirmed present. 15 new integration tests. 503 integration tests passing, zero warnings. Opus approved Round 2 after fixing: trailing-comma `)` consumption, empty-destructure error, propagating inner parse errors instead of swallowing, removing `Token::At` from `is_expression_start`. S2.1 lexer is now unblocked.
+
+**Goal.** Add tuple literal syntax `(a, b)` and tuple destructuring `@let (x, y) :: expr` plus `@[0]`/`@[1]` indexing to the Rust seed, unblocking the AVEN lexer (S2.1) which requires multi-value returns threaded through computation. Also verify `str_eq` builtin exists and is accessible to AVEN.
+
+**Files touched.**
+- `/Users/roee.ashkenazi/Desktop/aven-lang/src/ast.rs` — add `Tuple(Vec<Expr>)` expr variant (before `Nil`).
+- `/Users/roee.ashkenazi/Desktop/aven-lang/src/parser.rs` — tuple literal parsing + destructuring pattern recognition.
+- `/Users/roee.ashkenazi/Desktop/aven-lang/src/eval.rs` — tuple eval + indexed access (`@[0]`/`@[1]`); verify `str_eq` registered.
+- `/Users/roee.ashkenazi/Desktop/aven-lang/src/main.rs` — seed tests for tuple ops.
+
+**Specific changes.**
+- **ast.rs**: Insert `Tuple(Vec<Expr>, NodeId, SourceSpan)` before `Nil`; update `Pattern` enum to add `TupleDestructure(Vec<String>)` for `(a, b)` binding.
+- **parser.rs**: Detect `(` followed by `,` → parse tuple literal; destructure in `@let (x, y) :: expr` via new pattern variant; parse `@[0]`/`@[1]` as indexed access (check if `LeftBracket` is a suffix token).
+- **eval.rs**: `Tuple(Vec<Value>)` at runtime; index via `@[n]` token sequence (e.g., `expr @[0]` → get field 0); verify `str_eq` at lines ~1500–1600 (add if missing).
+- **Integration tests** (8–10): tuple literals `(1 2)`, destructure `@let (a b) :: (1 2)` binds a=1 b=2, index `@[0]`, `@[1]`, nesting `((1 2) (3 4))`, string concat `(+ a b)` on strings.
+
+**Definition of done.**
+- `Tuple` expr + `TupleDestructure` pattern variant added + compiled error-free.
+- Parser recognizes `(a, b)` tuples (comma-separated, no parens-only groups).
+- Destructuring `@let (x, y) :: …` binds both names.
+- Index syntax `@[0]`/`@[1]` extracts tuple fields; out of bounds → `EvalError::IndexOutOfBounds`.
+- `str_eq` confirmed registered in `eval.rs` or added; 3 tests verify.
+- All 488 existing seed tests still pass; 8 new tuple tests pass.
+
+**Out of scope.** `|>` pipe operator (not needed for lexer; defer to later); recursive tuple nesting limit (accept Rust recursion defaults for now).
+
+---
 
 **Goal.** Implement a complete AVEN-language lexer in `aven-core/lexer.aven` that tokenizes source text into a canonical `\n`-joined stream matching the seed's `emit-tokens` output. The lexer must recognize all 66 token kinds, handle all escape sequences, symbol names, and effect arrows, and run under the frozen seed-AVEN subset (no closures, no mutable state, prefix-only calls).
 
@@ -324,7 +356,7 @@ Note: in the current sandbox `cargo`/`rustc` are unavailable and the network is 
 | S2.0a — emit-tokens/emit-ast dumps | ✅ Done |
 | S2.0 — bootstrap prerequisites | ✅ Done |
 | S2.0b — seed comparison & boolean primitives | ✅ Done |
-| **S2.1 — Lexer in AVEN** | ▶ **Active** (unblocked) |
+| **S2.1 — Lexer in AVEN** | ✅ Done |
 | S2.2 — Parser in AVEN | Pending |
 | S2.3 — Type & effect checker | Pending |
 | S2.4 — Module resolver | Pending |
