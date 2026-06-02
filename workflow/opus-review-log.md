@@ -1462,3 +1462,7 @@ Haiku reviewer caught duplicate-match bug (found=@true not checked before matche
 ## S2.6 — Round 1 (APPROVED)
 
 AVEN evaluator clean first pass. All 5 fixtures trace correctly: lit-int=42, arith=7, let-var=10, if-true=1, nested Mul(Add(2,3),4)=20. Env threading correct; str-to-int/int-to-str digit loops trace correctly; scan-to-close handles depth-2 nesting for nested arithmetic. No defects.
+
+## S2.7 — Round 1 (APPROVED)
+
+Driver pipeline clean. `run` correctly sequences tokenize→parse→check→eval with error short-circuit on "ERROR:" prefix. `run-parse` and `run-check` correct sub-pipeline variants. `starts-with` name collision across concatenated files is documented as known concern, behavior-preserving. 4 fixtures cover simple int, arithmetic, let binding, type error. 

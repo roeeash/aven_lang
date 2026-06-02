@@ -1,1 +1,31 @@
-; driver.aven: Orchestrate the compilation pipeline
+; AVEN Pipeline Driver (S2.7)
+; Wires: tokenize (S2.1) → parse (S2.2) → check (S2.3) → eval (S2.6)
+; Assumes all pipeline functions are in scope (files concatenated for execution).
+; Runtime verification QUEUED when aven binary available.
+
+@fn starts-with :: s:Str prefix:Str -> @Bool
+  @let plen :: (@call str_len prefix)
+  @let slen :: (@call str_len s)
+  @if (@call int_gt plen slen)
+    @then @false
+    @else (@call str_eq (@call str_sub s 0 plen) prefix)
+
+; Run source through the full pipeline: lex → parse → type-check → eval
+@fn run :: source:Str -> Str
+  @let tokens :: (tokenize source)
+  @let ast :: (parse tokens)
+  @let verdict :: (check ast)
+  @if (starts-with verdict "ERROR")
+    @then verdict
+    @else (eval ast)
+
+; Run only lex + parse (no eval) — returns AST string
+@fn run-parse :: source:Str -> Str
+  @let tokens :: (tokenize source)
+  (parse tokens)
+
+; Run lex + parse + check only — returns "PASS" or "ERROR:..."
+@fn run-check :: source:Str -> Str
+  @let tokens :: (tokenize source)
+  @let ast :: (parse tokens)
+  (check ast)

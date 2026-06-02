@@ -1,1 +1,6 @@
-; main.aven: CLI entry point and REPL
+; AVEN compiler entry point (S2.7)
+; main.aven — invokes the pipeline driver on input source.
+; Assumes pipeline functions (tokenize, parse, check, eval, run) are in scope.
+
+@fn main :: source:Str -> Str
+  (run source)

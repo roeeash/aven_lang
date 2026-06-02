@@ -442,7 +442,7 @@ Note: in the current sandbox `cargo`/`rustc` are unavailable and the network is 
 | S2.4 — Module resolver | ✅ Done |
 | S2.5 — `@diff` engine | ✅ Done |
 | S2.6 — Evaluator (backend) | ✅ Done |
-| S2.7 — Driver + CLI | Pending |
+| S2.7 — Driver + CLI | ✅ Done |
 | S2.8 — Self-hosting fixpoint | Pending |
 | S2.9 — Repo split & freeze | Pending |
 
@@ -687,3 +687,52 @@ Three `\n`-separated lines: registry string, modname, requested caps. The resolv
 ### S2.6 — Evaluator in AVEN — **Done**
 
 **Outcome.** `aven-core/eval.aven` implements a tree-walking evaluator (31 functions) consuming canonical AST strings. Threads `name:value\n` environment via `env-extend`/`env-lookup`. Evaluates: Int/Float/Str/Bool literals, Var lookup, Let binding, Ret, If, Arithmetic (+/-/*//). Integer ↔ string conversion via `str-to-int`/`int-to-str` (digit-by-digit loops). `scan-to-close` correctly handles nested parentheses for nested arithmetic evaluation. Opus approved Round 1 (clean pass). 5 golden fixtures. Runtime parity QUEUED.
+
+---
+
+## Active Stage: S2.7 — Driver + CLI in AVEN
+
+**Goal.** Implement the pipeline driver in `aven-core/driver.aven` that wires the completed S2.1–S2.6 components into a working `lex → parse → check → eval` pipeline. The driver takes raw AVEN source as input and returns the final evaluated value (or a type-check error). `aven-core/main.aven` provides the top-level entry point. This is the integration stage that demonstrates the self-hosted pipeline is end-to-end functional.
+
+**Files touched.**
+- `aven-core/driver.aven` — pipeline orchestrator (replaces stub).
+- `aven-core/main.aven` — top-level entry (currently stub; update to call driver).
+- `aven-core/tests/driver-fixtures/*.aven` — 4 end-to-end source files (new).
+- `aven-core/tests/driver-fixtures/*.output` — 4 expected output strings (new).
+
+**Pipeline.** Source string → `tokenize` (S2.1 lexer) → token stream → `parse` (S2.2 parser) → AST string → `check` (S2.3 type checker) → if PASS: `eval` (S2.6 evaluator) → value string. If `check` returns `"PASS"`, proceed to eval. If `check` returns `"ERROR:..."`, return the error directly without evaluating.
+
+**Specific changes — `driver.aven`:**
+- `@fn run :: source:Str -> Str` — entry point: calls pipeline in sequence.
+- `@fn run-pipeline :: source:Str -> Str` — internal: tokenize → parse → check → eval.
+- No module imports (all components defined locally — for S2.7 they are concatenated/referenced inline since seed has no `@use` dispatch yet).
+
+**Important design note.** Since seed-AVEN has no runtime module loading, `driver.aven` cannot call functions from other `.aven` files at runtime. The driver must **re-declare or inline** the key function signatures it needs. For S2.7, the driver simply documents the pipeline contract and calls `tokenize`/`parse`/`check`/`eval` assuming they are defined in the same evaluation scope. The test fixtures document the expected end-to-end behavior.
+
+**Specific changes — `main.aven`:**
+- Update `main.aven` to call `(run source)` where `source` is the input program.
+
+**Tests to add** (hand-traced, documenting pipeline behavior):
+- `simple-let.aven` + `simple-let.output`: `@let x :: 42` → `"42"`.
+- `arith.aven` + `arith.output`: `@let x :: (+ 3 4)` but wait — the pipeline lexes the source, then the parser must produce `(Let x (Arithmetic Add (Int 3) (Int 4)))`, then eval → `"7"`. However: input `(+ 3 4)` is arithmetic; the parser maps `Plus` → `Add`. Let's trace exactly.
+
+Actually — the pipeline fixture `.aven` files contain AVEN source. The lexer (S2.1) tokenizes them. The parser (S2.2) produces AST. The checker (S2.3) validates. The evaluator (S2.6) computes. The `.output` file contains the expected final value string.
+
+- `simple-int.aven` + `simple-int.output`: source `42` (bare int literal) → tokens: `Integer 42\nEof\n` → AST: `(Int 42)` → check: PASS → eval: `"42"`.
+- `arith.aven` + `arith.output`: source `(+ 3 4)` → `"7"`.
+- `let.aven` + `let.output`: source `@let x :: 42` (multiline doesn't apply here; single expression) → wait, `@let x :: 42` returns `42` in seed. The pipeline: lex → `Let\nIdent x\nDoubleColon\nInteger 42\nEof\n` → parse → `(Let x (Int 42))` → check → PASS → eval → `"42"`.
+- `type-err.aven` + `type-err.output`: source `(+ 42 "hello")` → lex → parse → `(Arithmetic Add (Int 42) (Str "hello"))` → check → `"ERROR:type-mismatch"` (stops before eval).
+
+**Definition of done.**
+- `driver.aven` defines `run :: source:Str -> Str` with the full pipeline sequence.
+- `main.aven` updated to call `run`.
+- All 4 fixtures document the pipeline contract.
+- No `|>`, all `+` binary.
+
+**Out of scope.** Runtime module loading, `@match` forms, `fmt` subcommand, `patch` subcommand, `intent` subcommand. All deferred — S2.7 establishes the minimum viable pipeline.
+
+---
+
+### S2.7 — Driver + CLI in AVEN — **Done**
+
+**Outcome.** `aven-core/driver.aven` wires the complete pipeline: `run :: source → tokenize → parse → check → eval`. Error short-circuit: if `check` returns `"ERROR:..."`, return it without evaluating. `run-parse` and `run-check` provide sub-pipeline access. `main.aven` updated to call `run`. 4 golden fixtures covering simple int, arithmetic, let binding, and type-error paths. Opus approved Round 1 (clean pass). Runtime parity QUEUED when `aven` binary available. The complete Stage 2 pipeline (S2.1–S2.7) is implemented in AVEN source.
