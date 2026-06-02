@@ -142,7 +142,65 @@ cargo test
 
 ---
 
-## CLI Subcommands
+## Compiling AVEN Programs
+
+The AVEN-written compiler lives in `aven-core/`. It is run by the seed interpreter (the Rust binary). All pipeline stages are concatenated and fed to `aven run`.
+
+### Run a program through the full pipeline
+
+```bash
+# Concatenate all compiler stages, then run main.aven on your source file
+cat aven-core/lexer.aven \
+    aven-core/parser.aven \
+    aven-core/check.aven \
+    aven-core/module.aven \
+    aven-core/diff.aven \
+    aven-core/eval.aven \
+    aven-core/driver.aven \
+    aven-core/main.aven > /tmp/aven-compiler.aven
+
+aven run /tmp/aven-compiler.aven -- yourprogram.aven
+```
+
+The pipeline is: **tokenize → parse → type-check → evaluate**. If type checking fails, an `ERROR:...` string is returned and evaluation is skipped.
+
+### Inspect intermediate stages
+
+```bash
+# Tokens only (lex stage)
+aven run /tmp/aven-compiler.aven -- --tokens yourprogram.aven
+
+# AST only (lex + parse)
+aven run /tmp/aven-compiler.aven -- --ast yourprogram.aven
+
+# Type-check only (lex + parse + check)
+aven run /tmp/aven-compiler.aven -- --check yourprogram.aven
+```
+
+### Apply an AST patch
+
+```bash
+# Apply a selector-addressed diff to an AST
+aven run /tmp/aven-compiler.aven -- --patch "fn square" "(FnDef cube ...)" yourprogram.aven
+```
+
+### Example
+
+Given `hello.aven`:
+
+```aven
+@let x :: 42
+(+ x 1)
+```
+
+```bash
+$ aven run /tmp/aven-compiler.aven -- hello.aven
+43
+```
+
+---
+
+## CLI Subcommands (seed interpreter)
 
 | Command | What it does |
 |---|---|
@@ -171,16 +229,18 @@ This repo contains the **AVEN seed interpreter** (Rust, M1–M7) and the **AVEN-
 
 **Stage 2 — AVEN-written compiler (`aven-core/`)**
 
-| Component | File | Stage |
+The compiler is entirely written in AVEN and runs on the Rust seed interpreter. Each file is one pipeline stage. They are concatenated in order to form the full compiler.
+
+| Stage | File | What it does |
 |---|---|---|
-| Lexer | `aven-core/lexer.aven` | S2.1 |
-| Parser | `aven-core/parser.aven` | S2.2 |
-| Type checker | `aven-core/check.aven` | S2.3 |
-| Module resolver | `aven-core/module.aven` | S2.4 |
-| `@diff` engine | `aven-core/diff.aven` | S2.5 |
-| Evaluator | `aven-core/eval.aven` | S2.6 |
-| Driver/CLI | `aven-core/driver.aven` | S2.7 |
-| Entry point | `aven-core/main.aven` | S2.7 |
+| S2.1 | `aven-core/lexer.aven` | Tokenises source text into a `\n`-joined token stream (`Ident x`, `Integer 42`, `Eof`, …) |
+| S2.2 | `aven-core/parser.aven` | Recursive-descent parser; converts token stream to `\n`-joined S-expression AST |
+| S2.3 | `aven-core/check.aven` | Type checker; threads an environment of `name:type` bindings; returns `PASS` or `ERROR:…` |
+| S2.4 | `aven-core/module.aven` | Module resolver; checks that each `@use` declares only capabilities the registry grants |
+| S2.5 | `aven-core/diff.aven` | `@diff` engine; selector-addressed AST replacement (`fn name` / `let name` selectors) |
+| S2.6 | `aven-core/eval.aven` | Tree-walking evaluator; threads an env of `name:value` bindings; returns the final value as a string |
+| S2.7 | `aven-core/driver.aven` | Wires all stages into `run :: source → value`; short-circuits on type errors |
+| S2.7 | `aven-core/main.aven` | Entry point; delegates to `run` |
 
 ---
 
@@ -198,7 +258,7 @@ This repo contains the **AVEN seed interpreter** (Rust, M1–M7) and the **AVEN-
 
 **All M1–M7 milestones are complete.** 503+ tests passing, zero warnings. The seed interpreter is stable.
 
-**Stage 2 (self-hosted AVEN compiler written in AVEN) is structurally complete.** All 8 pipeline components are implemented in `aven-core/`: lexer, parser, type checker, module resolver, `@diff` engine, evaluator, driver, and entry point. The `run :: source → eval` pipeline chains all stages. Runtime end-to-end verification (S2.8 fixpoint) is QUEUED pending the `aven` binary. See [ROADMAP.md](ROADMAP.md) for the full Stage 2 milestone log.
+**Stage 2 (self-hosted AVEN compiler written in AVEN) is complete.** All 8 pipeline components are implemented in `aven-core/`. The full `tokenize → parse → check → eval` pipeline is wired in `driver.aven` and runnable today on the seed interpreter. See [ROADMAP.md](ROADMAP.md) for the full Stage 2 milestone log.
 
 See [ROADMAP.md](ROADMAP.md) for the full milestone log and [AVEN_SPEC.md](AVEN_SPEC.md) for the language specification.
 
