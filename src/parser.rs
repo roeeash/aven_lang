@@ -167,8 +167,9 @@ impl Parser {
     fn is_expression_start(&self) -> bool {
         matches!(self.current(),
             Token::Let | Token::Fn | Token::Ret | Token::IoWrite | Token::Intent | Token::Use | Token::Mod | Token::Pub | Token::Match | Token::Ok | Token::Err | Token::Diff | Token::Diffs |
-            Token::If | Token::Call | Token::Ident(_) | Token::String(_) | Token::Integer(_) | Token::True | Token::False | Token::LeftParen | Token::At | Token::Underscore
+            Token::If | Token::Call | Token::Ident(_) | Token::String(_) | Token::Integer(_) | Token::True | Token::False | Token::LeftParen | Token::Underscore
         )
+        // Note: Token::At is now only postfix (@[index], etc.) and is not included here
     }
 
     fn parse_program(&mut self) -> Result<Expr, ParseError> {
@@ -896,9 +897,64 @@ impl Parser {
         let start_span = self.current_span();
         self.expect(Token::Let)?;
 
-        let name = match self.advance() {
-            Token::Ident(n) => n,
-            tok => return Err(ParseError::UnexpectedToken(format!("{:?}", tok))),
+        // Check if this is a tuple destructure pattern or a simple name
+        let is_destructure = self.current() == Token::LeftParen;
+        let (name, destructure_names) = if is_destructure {
+            // Tuple destructuring: @let (a, b, c) :: expr
+            self.advance(); // consume (
+            let mut names = Vec::new();
+
+            loop {
+                match self.current() {
+                    Token::RightParen => break,
+                    Token::Ident(n) if !n.starts_with('#') => {
+                        names.push(n.clone());
+                        self.advance();
+                    }
+                    _ => return Err(ParseError::UnexpectedToken(
+                        format!("Expected identifier in tuple destructure, got {:?}", self.current())
+                    )),
+                }
+
+                match self.current() {
+                    Token::Comma => {
+                        self.advance();
+                    }
+                    Token::RightParen => {
+                        break;
+                    }
+                    Token::Ident(_) => {
+                        // Space-separated pattern: continue to next identifier
+                    }
+                    _ => return Err(ParseError::UnexpectedToken(
+                        "Expected identifier, comma, or ) in tuple destructure".to_string()
+                    )),
+                }
+            }
+
+            // Always advance past )
+            self.expect(Token::RightParen)?;
+
+            // Reject empty patterns
+            if names.is_empty() {
+                return Err(ParseError::UnexpectedToken(
+                    "empty destructure pattern".to_string()
+                ));
+            }
+
+            ("__tup".to_string(), Some(names))
+        } else {
+            // Simple identifier
+            match self.current() {
+                Token::Ident(n) if !n.starts_with('#') => {
+                    let nm = n.clone();
+                    self.advance();
+                    (nm, None)
+                }
+                _ => return Err(ParseError::UnexpectedToken(
+                    "Expected identifier after @let".to_string()
+                )),
+            }
         };
 
         self.expect(Token::DoubleColon)?;
@@ -912,12 +968,46 @@ impl Parser {
             SourceSpan::zero()
         };
 
-        Ok(Expr::Let {
-            name,
-            value,
-            node_id: self.next_node_id(),
-            span: self.span_from(start_span, end_span),
-        })
+        if let Some(names) = destructure_names {
+            // Build a Block with: let __tup = value; let a = __tup@[0]; let b = __tup@[1]; ...
+            let mut exprs = vec![
+                Expr::Let {
+                    name: name.clone(),
+                    value,
+                    node_id: self.next_node_id(),
+                    span: self.span_from(start_span, end_span),
+                }
+            ];
+
+            // Add one Let for each destructured name
+            for (idx, dest_name) in names.into_iter().enumerate() {
+                exprs.push(Expr::Let {
+                    name: dest_name,
+                    value: Box::new(Expr::TupleIndex {
+                        tuple: Box::new(Expr::Var(
+                            name.clone(),
+                            self.next_node_id(),
+                            end_span,
+                        )),
+                        index: idx,
+                        node_id: self.next_node_id(),
+                        span: end_span,
+                    }),
+                    node_id: self.next_node_id(),
+                    span: end_span,
+                });
+            }
+
+            Ok(Expr::Block(exprs, self.next_node_id(), self.span_from(start_span, end_span)))
+        } else {
+            // Simple identifier: just a regular Let
+            Ok(Expr::Let {
+                name,
+                value,
+                node_id: self.next_node_id(),
+                span: self.span_from(start_span, end_span),
+            })
+        }
     }
 
     /// Parse a type expression (e.g., `Int`, `Str`, `#ok Int`).
@@ -1333,9 +1423,13 @@ impl Parser {
     }
 
     fn parse_expression(&mut self) -> Result<Expr, ParseError> {
+        // Allow @let in expression context (for inline bindings in tuples etc)
+        if self.current() == Token::Let {
+            return self.parse_let();
+        }
         self.parse_if()
     }
-    
+
     fn parse_if(&mut self) -> Result<Expr, ParseError> {
         if self.current() == Token::If {
             let start_span = self.current_span();
@@ -1372,13 +1466,44 @@ impl Parser {
     }
     
     fn parse_arithmetic(&mut self) -> Result<Expr, ParseError> {
-        let left = self.parse_primary()?;
-        
+        let mut left = self.parse_primary()?;
+
+        // Handle postfix tuple indexing: expr @[index]
+        while self.current() == Token::At {
+            let at_span = self.current_span();
+            self.advance(); // consume @
+
+            if self.current() == Token::LeftBracket {
+                self.advance(); // consume [
+                match self.current() {
+                    Token::Integer(idx) => {
+                        let index = idx as usize;
+                        self.advance();
+                        self.expect(Token::RightBracket)?;
+                        let end_span = if self.pos > 0 {
+                            self.tokens[self.pos - 1].1
+                        } else {
+                            SourceSpan::zero()
+                        };
+                        left = Expr::TupleIndex {
+                            tuple: Box::new(left),
+                            index,
+                            node_id: self.next_node_id(),
+                            span: self.span_from(at_span, end_span),
+                        };
+                    }
+                    _ => return Err(ParseError::UnexpectedToken("Expected integer index in @[...]".to_string())),
+                }
+            } else {
+                return Err(ParseError::UnexpectedToken("Expected [ after @ in postfix".to_string()));
+            }
+        }
+
         // Handle parenthesized arithmetic: (+ a b)
         if let Expr::Arithmetic { .. } = left {
             return Ok(left);
         }
-        
+
         Ok(left)
     }
     
@@ -1543,6 +1668,28 @@ impl Parser {
                     span: self.span_from(start_span, end_span),
                 })
             }
+            Token::If => {
+                // If expression in parentheses: (@if cond @then then-expr @else else-expr)
+                self.advance(); // consume @if
+                let cond = Box::new(self.parse_comparison()?);
+                self.expect(Token::Then)?;
+                let then_branch = Box::new(self.parse_comparison()?);
+                self.expect(Token::Else)?;
+                let else_branch = Box::new(self.parse_comparison()?);
+                self.expect(Token::RightParen)?;
+                let end_span = if self.pos > 0 {
+                    self.tokens[self.pos - 1].1
+                } else {
+                    SourceSpan::zero()
+                };
+                Ok(Expr::If {
+                    cond,
+                    then_branch,
+                    else_branch,
+                    node_id: self.next_node_id(),
+                    span: self.span_from(start_span, end_span),
+                })
+            }
             Token::Ident(name) if name.starts_with('#') => {
                 // Tagged value: (#tag [payload])
                 let tag = name[1..].to_string();
@@ -1576,9 +1723,69 @@ impl Parser {
                 }
             }
             _ => {
-                let expr = self.parse_expression()?;
-                self.expect(Token::RightParen)?;
-                Ok(expr)
+                let first_expr = self.parse_arithmetic()?;
+
+                // Check if this is a tuple (space-separated or comma-separated elements in parens)
+                // A tuple has multiple elements, not just a single expression
+                let next_token = self.current();
+                let is_tuple_start = matches!(next_token,
+                    Token::Integer(_) | Token::Float(_) | Token::String(_) |
+                    Token::True | Token::False | Token::Ident(_) |
+                    Token::LeftParen | Token::LeftBracket | Token::LeftBrace |
+                    Token::Comma);
+
+                if is_tuple_start {
+                    // Could be a tuple with space or comma separation
+                    let mut elements = vec![first_expr];
+
+                    // Try parsing more elements separated by spaces or commas
+                    loop {
+                        // Skip optional commas
+                        if self.current() == Token::Comma {
+                            self.advance();
+                            // After comma, check if closing paren
+                            if self.current() == Token::RightParen {
+                                break;
+                            }
+                        } else if self.current() == Token::RightParen {
+                            // We've reached the end without a comma
+                            break;
+                        }
+
+                        // Try to parse another arithmetic expression (which includes postfix)
+                        if matches!(self.current(),
+                            Token::Integer(_) | Token::Float(_) | Token::String(_) |
+                            Token::True | Token::False | Token::Ident(_) |
+                            Token::LeftParen | Token::LeftBracket | Token::LeftBrace) {
+                            match self.parse_arithmetic() {
+                                Ok(expr) => elements.push(expr),
+                                Err(e) => return Err(e),
+                            }
+                        } else {
+                            // Not a primary; stop parsing tuple
+                            break;
+                        }
+                    }
+
+                    self.expect(Token::RightParen)?;
+                    let end_span = if self.pos > 0 {
+                        self.tokens[self.pos - 1].1
+                    } else {
+                        SourceSpan::zero()
+                    };
+
+                    if elements.len() == 1 {
+                        // Single element; return as-is (but elements only has one, so pop it)
+                        Ok(elements.pop().unwrap())
+                    } else {
+                        // Multiple elements; this is a tuple
+                        Ok(Expr::Tuple(elements, self.next_node_id(), self.span_from(start_span, end_span)))
+                    }
+                } else {
+                    // Single expression in parens
+                    self.expect(Token::RightParen)?;
+                    Ok(first_expr)
+                }
             }
         }
     }

@@ -6300,3 +6300,185 @@ fn test_canonical_ast_dump_block_nesting() {
     assert!(!dump.contains("{"));
     assert!(!dump.contains("}"));
 }
+
+#[test]
+fn test_tuple_literal_two_elements() {
+    let result = run_str("(1 2)").expect("Eval failed");
+    match result {
+        Value::Tuple(elements) => {
+            assert_eq!(elements.len(), 2);
+            assert_eq!(elements[0], Value::Int(1));
+            assert_eq!(elements[1], Value::Int(2));
+        }
+        _ => panic!("Expected Tuple, got {:?}", result),
+    }
+}
+
+#[test]
+fn test_tuple_literal_nested() {
+    let result = run_str("((1 2) (3 4))").expect("Eval failed");
+    match result {
+        Value::Tuple(outer) => {
+            assert_eq!(outer.len(), 2);
+            match &outer[0] {
+                Value::Tuple(inner1) => {
+                    assert_eq!(inner1[0], Value::Int(1));
+                    assert_eq!(inner1[1], Value::Int(2));
+                }
+                _ => panic!("Expected inner tuple"),
+            }
+        }
+        _ => panic!("Expected Tuple"),
+    }
+}
+
+#[test]
+fn test_tuple_with_strings() {
+    let result = run_str("(\"hello\" \"world\")").expect("Eval failed");
+    match result {
+        Value::Tuple(elements) => {
+            assert_eq!(elements.len(), 2);
+            assert_eq!(elements[0], Value::Str("hello".to_string()));
+            assert_eq!(elements[1], Value::Str("world".to_string()));
+        }
+        _ => panic!("Expected Tuple"),
+    }
+}
+
+#[test]
+fn test_tuple_three_elements() {
+    let result = run_str("(1 2 3)").expect("Eval failed");
+    match result {
+        Value::Tuple(elements) => {
+            assert_eq!(elements.len(), 3);
+            assert_eq!(elements[0], Value::Int(1));
+            assert_eq!(elements[1], Value::Int(2));
+            assert_eq!(elements[2], Value::Int(3));
+        }
+        _ => panic!("Expected Tuple"),
+    }
+}
+
+#[test]
+fn test_tuple_with_arithmetic() {
+    let result = run_str("((+ 1 2) (+ 3 4))").expect("Eval failed");
+    match result {
+        Value::Tuple(elements) => {
+            assert_eq!(elements.len(), 2);
+            assert_eq!(elements[0], Value::Int(3));
+            assert_eq!(elements[1], Value::Int(7));
+        }
+        _ => panic!("Expected Tuple"),
+    }
+}
+
+#[test]
+fn test_tuple_parse_single_paren() {
+    // Single element in parens should NOT be a tuple
+    let result = run_str("(42)").expect("Eval failed");
+    assert_eq!(result, Value::Int(42));
+}
+
+#[test]
+fn test_str_eq_builtin() {
+    let result = run_str("(@call str_eq \"hello\" \"hello\")").expect("Eval failed");
+    assert_eq!(result, Value::Bool(true));
+}
+
+#[test]
+fn test_str_eq_builtin_false() {
+    let result = run_str("(@call str_eq \"hello\" \"world\")").expect("Eval failed");
+    assert_eq!(result, Value::Bool(false));
+}
+
+#[test]
+fn test_tuple_string_concat() {
+    let result = run_str("((+ \"hel\" \"lo\") (+ \"wor\" \"ld\"))").expect("Eval failed");
+    match result {
+        Value::Tuple(elements) => {
+            assert_eq!(elements.len(), 2);
+            assert_eq!(elements[0], Value::Str("hello".to_string()));
+            assert_eq!(elements[1], Value::Str("world".to_string()));
+        }
+        _ => panic!("Expected Tuple"),
+    }
+}
+
+#[test]
+fn test_tuple_index() {
+    let code1 = "@let t :: (1 2 3) (t @[0])";
+    let result = run_str(code1).expect("Eval failed");
+    assert_eq!(result, Value::Int(1));
+
+    let code2 = "@let t :: (1 2 3) (t @[1])";
+    let result = run_str(code2).expect("Eval failed");
+    assert_eq!(result, Value::Int(2));
+
+    let code3 = "@let t :: (1 2 3) (t @[2])";
+    let result = run_str(code3).expect("Eval failed");
+    assert_eq!(result, Value::Int(3));
+}
+
+#[test]
+fn test_tuple_index_out_of_bounds() {
+    let code = "@let t :: (1 2) (t @[2])";
+    let result = run_str(code);
+    // Should return an error indicating index out of bounds
+    assert!(result.is_err());
+    let err_str = format!("{:?}", result);
+    assert!(err_str.contains("out of bounds") || err_str.contains("index"),
+            "Error message should mention out of bounds or index: {}", err_str);
+}
+
+#[test]
+fn test_tuple_destructuring() {
+    let code = "@let (a b) :: (1 2) (+ a b)";
+    let result = run_str(code).expect("Eval failed");
+    assert_eq!(result, Value::Int(3));
+}
+
+#[test]
+fn test_tuple_destructuring_comma_separated() {
+    let code = "@let (a, b) :: (1 2) (+ a b)";
+    let result = run_str(code).expect("Eval failed");
+    assert_eq!(result, Value::Int(3));
+}
+
+#[test]
+fn test_tuple_destructuring_three_elements() {
+    let code = "@let (a b c) :: (1 2 3) (+ a (+ b c))";
+    let result = run_str(code).expect("Eval failed");
+    assert_eq!(result, Value::Int(6));
+}
+
+#[test]
+fn test_tuple_destructuring_arity_too_few() {
+    let code = "@let (a b) :: (1 2 3) (+ a b)";
+    let result = run_str(code).expect("Eval failed");
+    // Extra elements are silently ignored
+    assert_eq!(result, Value::Int(3));
+}
+
+#[test]
+fn test_tuple_destructuring_arity_mismatch() {
+    let code = "@let (a b c) :: (1 2) a";
+    let result = run_str(code);
+    // Should get IndexOutOfBounds at runtime when accessing the 3rd element
+    assert!(result.is_err());
+}
+
+#[test]
+fn test_tuple_index_non_tuple() {
+    let code = "@let x :: 5 (x @[0])";
+    let result = run_str(code);
+    // Indexing a non-tuple should error
+    assert!(result.is_err());
+}
+
+#[test]
+fn test_tuple_index_nonnumeric() {
+    let code = "@let t :: (1 2) (t @[foo])";
+    let result = run_str(code);
+    // Non-numeric index should parse or eval error
+    assert!(result.is_err());
+}

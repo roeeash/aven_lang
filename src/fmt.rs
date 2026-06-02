@@ -87,6 +87,13 @@ pub fn format_expr(expr: &Expr) -> String {
         Expr::CtxSet { ctx, key, value, .. } => {
             format!("@ctx.set {} {} {}", format_expr(ctx), format_expr(key), format_expr(value))
         }
+        Expr::Tuple(elements, ..) => {
+            let inner = elements.iter().map(format_expr).collect::<Vec<_>>().join(" ");
+            format!("({})", inner)
+        }
+        Expr::TupleIndex { tuple, index, .. } => {
+            format!("{}@[{}]", format_expr(tuple), index)
+        }
         // Out of scope for M7.3
         _ => "<expr>".to_string(),
     }

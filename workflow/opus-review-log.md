@@ -1389,3 +1389,22 @@ Informational note (not a defect, flagged by Opus): ROADMAP's digit-range PROSE 
 Haiku reviewer round (before Opus) returned CHANGES REQUESTED with 5 items; orchestrator accepted 2 (added `test_builtin_int_le_false` + `test_builtin_int_ge_true` for true/false symmetry; corrected 3 inaccurate `src/eval.rs` line-range cites in SUBSET.md to 1951–2049 / 2051–2110 / 2113–2191) and filtered 3 (per-builtin type-error tests — redundant since the guard pattern is identical and one type-error test per category already exists). Fixes applied directly by the orchestrator and re-verified (added test lines net-zero braces; 27 `test_builtin_*` tests total).
 
 OPUS VERDICT: APPROVED
+
+## S2.0c — Round 1 (CHANGES REQUIRED)
+
+1. Pattern::TupleDestructure unreachable from @match parser — remove or wire up.
+2. Trailing comma in destructure: `)` not consumed → misleading error.
+3. Empty destructure `@let () :: expr` gives misleading error.
+4. Arity mismatch silent — @let (a,b) :: 3-tuple ignores extra.
+5. Only one destructure test — no comma-sep, 3-elem, arity-mismatch.
+6. Out-of-bounds test only checks `is_err()` — should assert specific variant.
+7. No test for indexing non-tuple value.
+8. No negative tests for @[n] parser errors (non-integer index).
+9. Token::At still in is_expression_start — can mis-classify postfix.
+10. **FILTERED (out of scope for S2.0c)** — TupleIndex not in find_node_by_selector.
+11. Tuple format round-trip not verified — separator may be lost.
+12. Malformed tuple element errors swallowed (Err(_) => break).
+
+
+## S2.0c — Round 2 (APPROVED)
+All 11 fixes confirmed. 503 integration tests + 169 unit tests pass. Brace balance = 0 on all key files.

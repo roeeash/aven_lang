@@ -162,9 +162,16 @@ pub enum Expr {
     Float(f64, NodeId, SourceSpan),
     Str(String, NodeId, SourceSpan),
     Bool(bool, NodeId, SourceSpan),
+    Tuple(Vec<Expr>, NodeId, SourceSpan),
     Nil,
     Symbol(String, NodeId, SourceSpan),
     Var(String, NodeId, SourceSpan),
+    TupleIndex {
+        tuple: Box<Expr>,
+        index: usize,
+        node_id: NodeId,
+        span: SourceSpan,
+    },
 
     Let {
         name: String,

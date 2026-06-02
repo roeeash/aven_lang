@@ -483,6 +483,13 @@ fn dump_expr(expr: &Expr) -> String {
             let elems_strs: Vec<String> = elements.iter().map(dump_expr).collect();
             format!("(List {})", elems_strs.join(" "))
         },
+        Expr::Tuple(elements, _, _) => {
+            let elems_strs: Vec<String> = elements.iter().map(dump_expr).collect();
+            format!("(Tuple {})", elems_strs.join(" "))
+        },
+        Expr::TupleIndex { tuple, index, .. } => {
+            format!("(TupleIndex {} @[{}])", dump_expr(tuple), index)
+        },
     }
 }
 

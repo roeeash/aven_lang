@@ -11,6 +11,7 @@ pub enum Value {
     Bool(bool),
     Symbol(String),
     Tagged(String, Option<Box<Value>>),  // tag, optional payload
+    Tuple(Vec<Value>),              // ordered tuple of values
     Nil,
     Record(Vec<(String, Value)>),
     List(Vec<Value>),
@@ -37,6 +38,7 @@ impl fmt::Debug for Value {
             Value::Bool(b) => write!(f, "Bool({})", b),
             Value::Symbol(s) => write!(f, "Symbol({})", s),
             Value::Tagged(tag, payload) => write!(f, "Tagged({}, {:?})", tag, payload),
+            Value::Tuple(elements) => write!(f, "Tuple({:?})", elements),
             Value::Nil => write!(f, "Nil"),
             Value::Record(fields) => write!(f, "Record({:?})", fields),
             Value::List(elements) => write!(f, "List({:?})", elements),
@@ -57,6 +59,7 @@ impl PartialEq for Value {
             (Value::Bool(a), Value::Bool(b)) => a == b,
             (Value::Symbol(a), Value::Symbol(b)) => a == b,
             (Value::Tagged(t1, p1), Value::Tagged(t2, p2)) => t1 == t2 && p1 == p2,
+            (Value::Tuple(v1), Value::Tuple(v2)) => v1 == v2,
             (Value::Nil, Value::Nil) => true,
             (Value::Record(f1), Value::Record(f2)) => f1 == f2,
             (Value::List(v1), Value::List(v2)) => v1 == v2,
@@ -98,6 +101,14 @@ impl fmt::Display for Value {
                 } else {
                     write!(f, "#{}", tag)
                 }
+            }
+            Value::Tuple(elements) => {
+                write!(f, "(")?;
+                for (i, v) in elements.iter().enumerate() {
+                    if i > 0 { write!(f, " ")?; }
+                    write!(f, "{}", v)?;
+                }
+                write!(f, ")")
             }
             Value::Nil => write!(f, "_"),
             Value::Record(fields) => {
@@ -149,6 +160,7 @@ pub enum EvalError {
     InvalidFunctionCall(String),
     TypeError(String),
     TypecheckFailed(String),
+    IndexOutOfBounds { index: usize, length: usize },
 }
 
 impl fmt::Display for EvalError {
@@ -160,6 +172,9 @@ impl fmt::Display for EvalError {
             EvalError::InvalidFunctionCall(msg) => write!(f, "Invalid function call: {}", msg),
             EvalError::TypeError(msg) => write!(f, "Type error: {}", msg),
             EvalError::TypecheckFailed(msg) => write!(f, "Typecheck failed: {}", msg),
+            EvalError::IndexOutOfBounds { index, length } => {
+                write!(f, "Index out of bounds: index {} for tuple of length {}", index, length)
+            }
         }
     }
 }
@@ -3180,11 +3195,34 @@ pub fn eval(expr: &Expr, env: &mut Env) -> Result<Value, EvalError> {
         Expr::Str(s, _, _) => Ok(Value::Str(s.clone())),
         Expr::Bool(b, _, _) => Ok(Value::Bool(*b)),
         Expr::Symbol(s, _, _) => Ok(Value::Symbol(s.clone())),
+        Expr::Tuple(elements, _, _) => {
+            let mut vals = Vec::new();
+            for elem in elements {
+                vals.push(eval(elem, env)?);
+            }
+            Ok(Value::Tuple(vals))
+        }
         Expr::Nil => Ok(Value::Nil),
 
         Expr::Var(name, _, _) => {
             env.get(name)
                 .ok_or_else(|| EvalError::UndefinedVariable(name.clone()))
+        }
+
+        Expr::TupleIndex { tuple, index, .. } => {
+            let tup_val = eval(tuple, env)?;
+            match tup_val {
+                Value::Tuple(ref elements) => {
+                    if *index >= elements.len() {
+                        return Err(EvalError::IndexOutOfBounds {
+                            index: *index,
+                            length: elements.len(),
+                        });
+                    }
+                    Ok(elements[*index].clone())
+                }
+                _ => Err(EvalError::TypeError(format!("Cannot index non-tuple: {:?}", tup_val))),
+            }
         }
 
         Expr::Let { name, value, .. } => {

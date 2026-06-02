@@ -300,6 +300,10 @@ impl Lexer {
                 Some('@') => {
                     let start = self.pos;
                     self.advance();
+                    // Check if @ is followed by [ for indexing syntax @[index]
+                    if self.current() == Some('[') {
+                        return (Token::At, start);
+                    }
                     let ident = self.read_ident();
                     let tok = match ident.as_str() {
                         "let" => Token::Let,

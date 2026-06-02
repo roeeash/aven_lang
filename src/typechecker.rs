@@ -461,6 +461,22 @@ pub fn typecheck(expr: &Expr, env: &TypeEnv) -> Result<Type, TypeError> {
         Expr::Bool(_, _, _) => Ok(Type::Primitive(PrimitiveType::Bool)),
         Expr::Nil => Ok(Type::Primitive(PrimitiveType::Nil)),
         Expr::Symbol(_, _, _) => Ok(Type::Symbol),
+        Expr::Tuple(elements, _, _) => {
+            // Type tuples as Record for now (each element typed individually)
+            let mut fields = Vec::new();
+            for (i, elem) in elements.iter().enumerate() {
+                let elem_type = typecheck(elem, env)?;
+                fields.push((i.to_string(), elem_type));
+            }
+            Ok(Type::Record(fields))
+        }
+
+        Expr::TupleIndex { tuple, .. } => {
+            let _tup_type = typecheck(tuple, env)?;
+            // For now, assume tuple indexing returns a generic type (can be any element type)
+            // In a more robust system, we'd track which index maps to which type
+            Ok(Type::Primitive(PrimitiveType::Nil))
+        }
 
         Expr::Var(name, _, span) => {
             let ty = env.get(name).ok_or_else(|| TypeError {
@@ -1462,6 +1478,8 @@ fn walk_for_uncertain(
         | Expr::Nil
         | Expr::Var(..)
         | Expr::Symbol(..)
+        | Expr::Tuple(..)
+        | Expr::TupleIndex { .. }
         | Expr::Intent(..)
         | Expr::Ctx { .. }
         | Expr::Mod { .. }
