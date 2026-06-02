@@ -1436,3 +1436,17 @@ Rejected as false positive or out-of-scope: fixture format (source files, not to
 ## S2.2 — Round 2 (APPROVED)
 
 All binary `+` nesting confirmed correct across all 14 sites. `parse-paren` fallthrough advances correctly. FnDef/If/Arithmetic/Let/FnCall output strings verified by manual trace. No new bugs introduced.
+
+## S2.3 — Round 1 (CHANGES REQUIRED)
+
+9 defects found. Orchestrator accepted 2 as real; rejected 7 as best-effort/out-of-scope.
+
+Real fixes applied directly:
+1. `env-extend` was appending new bindings to the END of env string, while `env-scan` scans from the START (returning first match). Result: re-binding a name never overrides prior binding. Fixed: `env-extend` now prepends so newer bindings are found first.
+2. `infer-if` cond-type check used raw `str_eq cond-type "Bool"` — an Unknown cond (unresolved Var) wrongly produced ERROR:if-cond-not-bool. Fixed to `bool_or (str_eq "Bool") (str_eq "Unknown")`.
+
+Rejected: read-kind fallback on malformed input, undefined var yielding Unknown, bounds checks on find-space/find-paren-end, else-branch not inspected, unknown kind in infer-let — all best-effort per S2.3 plan.
+
+## S2.3 — Round 2 (APPROVED)
+
+Both fixes verified: env-extend prepend produces correct shadow semantics (newest binding found first by env-scan); infer-if Unknown-cond allowance correct. No new bugs.

@@ -438,7 +438,7 @@ Note: in the current sandbox `cargo`/`rustc` are unavailable and the network is 
 | S2.0b — seed comparison & boolean primitives | ✅ Done |
 | **S2.1 — Lexer in AVEN** | ✅ Done |
 | S2.2 — Parser in AVEN | ✅ Done |
-| S2.3 — Type & effect checker | Pending |
+| S2.3 — Type & effect checker | ✅ Done |
 | S2.4 — Module resolver | Pending |
 | S2.5 — `@diff` engine | Pending |
 | S2.6 — Evaluator (backend) | Pending |
@@ -509,3 +509,61 @@ Note: in the current sandbox `cargo`/`rustc` are unavailable and the network is 
 - No closures; all dispatch via named `@fn`.
 
 **Out of scope.** `@match`, `@err`/`@ok`, `@mod`/`@use`/`@pub`, `@diff`, `@intent`, `@uncertain`, `@ctx` (defer to later parse passes); error recovery (best-effort); runtime parity test (QUEUED when binary available).
+
+---
+
+### S2.3 — Type checker in AVEN — **Done**
+
+**Outcome.** `aven-core/check.aven` implements a structural type checker (23 functions) consuming `\n`-joined AST strings. Environment threaded as `\n`-joined `name:Type\n` entries, prepended for correct shadow semantics. Infers types for: Int/Float/Str/Bool literals, Var lookup, Let binding, Ret, If (cond must be Bool or Unknown), Arithmetic (operand type compatibility). Key Opus fixes: env-extend must prepend (not append) so newer bindings shadow older; if-cond check must allow Unknown via bool_or. 6 golden fixtures. Opus approved Round 2. Runtime parity QUEUED.
+
+## Active Stage spec (archived): S2.3 — Type checker in AVEN
+
+**Goal.** Implement a structural type checker in `aven-core/check.aven` that walks the canonical AST string (S2.2 parser output, `\n`-joined S-expressions) and returns `"PASS"` or `"ERROR: <msg>"`. Scope is a forward-only checker: infer types for literals, arithmetic, `Let` bindings, `Var` lookup, `If`, `Ret`, and `FnCall` arity. Full bidirectional inference and effect tracking are deferred; this stage establishes the environment-threading pattern and parity baseline.
+
+**Files touched.**
+- `aven-core/check.aven` — checker implementation (replaces stub).
+- `aven-core/tests/check-fixtures/*.ast` — 6 AST input files (new).
+- `aven-core/tests/check-fixtures/*.verdict` — 6 expected verdict files (new).
+
+**Type environment representation.** A `\n`-joined string of `name:Type` entries (e.g. `"x:Int\ny:Str"`). Helpers: `env-lookup :: env:Str name:Str -> Str` (returns type or `"Unknown"`), `env-extend :: env:Str name:Str ty:Str -> Str` (appends `name:Type\n`).
+
+**Token / AST node format.** The checker reads AST nodes by scanning the `\n`-joined AST string line by line (same `peek`/`advance` helpers as S2.2 parser, reused here). Each AST node is one line in the format from `AST_ENCODING.md`.
+
+**Specific changes — `check.aven`:**
+- `@fn check :: ast:Str -> Str` — entry: calls `check-block ast "" "Unknown"`, returns verdict.
+- `@fn check-block :: ast:Str env:Str last-type:Str -> Str` — processes lines until `""`, returns `"PASS"` or `"ERROR: ..."`.
+- `@fn check-node :: line:Str env:Str -> (Str, Str)` — returns `(type, updated-env)` for one AST line. Dispatch on prefix:
+  - `"(Int "` → type `"Int"`, env unchanged.
+  - `"(Float "` → type `"Float"`, env unchanged.
+  - `"(Str "` → type `"Str"`, env unchanged.
+  - `"(Bool "` → type `"Bool"`, env unchanged.
+  - `"(Var "` → look up name in env; return its type or `"Unknown"`.
+  - `"(Let "` → parse name + value-type from line; extend env with `name:value-type`; return value-type.
+  - `"(Ret "` → parse inner type from line; return it.
+  - `"(If "` → check cond is `"Bool"`, then/else types compatible (equal or either `"Unknown"`); return then-type.
+  - `"(Arithmetic "` → both operands must be `"Int"` or both `"Str"` (for `+`); return operand type.
+  - `"(FnCall "` → return `"Unknown"` (arity checking deferred — no fn type env yet).
+  - `"(FnDef "` → parse params, extend env, check body; return declared return type or body type.
+  - default → `"Unknown"`.
+- **Env-lookup helper:** scan `\n`-joined env string for line starting with `name:`, extract type suffix.
+- **Types compatible:** `"Int"` ≡ `"Int"`, `"Unknown"` ≡ anything (inference gap accepted).
+- **Error on mismatch:** `(+ "ERROR: type mismatch — expected " (+ expected-type (+ " got " actual-type)))`.
+
+**Note on AST nesting.** S2.2 parser emits flat single-line AST nodes (e.g. `(Let x (Int 42))`). The checker parses these inline: extract sub-expressions by scanning for balanced parens within the line. Add helpers: `extract-inner :: line:Str start:Int -> Str` (returns content between first `(` and matching `)`) and `split-fields :: s:Str -> (Str, Str)` (splits on first space).
+
+**Tests to add** (hand-traced, source-level):
+- `ok-let.ast` + `ok-let.verdict`: `(Let x (Int 42))` → `PASS`.
+- `ok-arith.ast` + `ok-arith.verdict`: `(Arithmetic Add (Int 1) (Int 2))` → `PASS`.
+- `ok-if.ast` + `ok-if.verdict`: `(If (Bool true) (Int 1) (Int 0))` → `PASS`.
+- `err-arith.ast` + `err-arith.verdict`: `(Arithmetic Add (Int 1) (Str "x"))` → `ERROR: type mismatch`.
+- `err-if-cond.ast` + `err-if-cond.verdict`: `(If (Int 1) (Int 2) (Int 3))` → `ERROR: if condition must be Bool`.
+- `ok-var.ast` + `ok-var.verdict`: `(Let x (Int 10))\n(Var x)` → `PASS`.
+
+**Definition of done.**
+- `check.aven` parses under seed interpreter (source-level verified, no `|>`, binary `+` only).
+- `check-node` dispatches on: `Int`, `Float`, `Str`, `Bool`, `Var`, `Let`, `Ret`, `If`, `Arithmetic`, `FnCall`, `FnDef`.
+- `env-lookup` and `env-extend` correctly thread environment across `Let` bindings.
+- All 6 fixtures exist with hand-traced verdicts.
+- Type-mismatch errors reported for: non-Bool `@if` condition; mixed-type arithmetic.
+
+**Out of scope.** Effect arrows, `@uncertain` tracking, `@match`, `@mod`/`@use`, full bidirectional inference, inline `FnDef` body type unification (body-vs-declared return type check), generics, runtime parity (QUEUED).

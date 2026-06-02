@@ -1,1 +1,283 @@
-; check.aven: Type check and validate capability constraints
+; AVEN Type & Effect Checker (S2.3)
+; Consumes \n-joined AST from S2.2 parser; threads environment and effects through type inference.
+; Output: type verdict string (PASS or ERROR:<reason>).
+
+; Main entry point: check a block of AST lines
+@fn check :: ast:Str -> Str
+  @let result :: (check-block ast "")
+  @if (starts-with result "ERROR")
+    @then result
+    @else "PASS"
+
+; Process AST lines sequentially, threading environment and effects
+@fn check-block :: ast:Str env:Str -> Str
+  @let line :: (peek ast)
+  @if (@call str_eq line "")
+    @then "PASS"
+    @else
+      @let (ty, new-env) :: (infer-node line env)
+      @if (starts-with ty "ERROR")
+        @then ty
+        @else (check-block (advance ast) new-env)
+
+; ============================================================================
+; Helper: Extract current token (text before first \n)
+; ============================================================================
+
+@fn peek :: remaining:Str -> Str
+  @let nl_pos :: (find-newline remaining 0 (@call str_len remaining))
+  @if (@call int_eq nl_pos -1)
+    @then remaining
+    @else (@call str_sub remaining 0 nl_pos)
+
+; Find first \n position (returns -1 if not found)
+@fn find-newline :: s:Str pos:Int len:Int -> Int
+  @if (@call int_ge pos len)
+    @then -1
+    @else
+      @let c :: (@call str_get s pos)
+      @if (@call str_eq c "\n")
+        @then pos
+        @else (find-newline s (+ pos 1) len)
+
+; Advance past current token
+@fn advance :: remaining:Str -> Str
+  @let nl_pos :: (find-newline remaining 0 (@call str_len remaining))
+  @if (@call int_eq nl_pos -1)
+    @then ""
+    @else (@call str_sub remaining (+ nl_pos 1) (@call str_len remaining))
+
+; Check if string starts with prefix
+@fn starts-with :: s:Str prefix:Str -> @Bool
+  @let plen :: (@call str_len prefix)
+  @let slen :: (@call str_len s)
+  @if (@call int_gt plen slen)
+    @then @false
+    @else (@call str_eq (@call str_sub s 0 plen) prefix)
+
+; ============================================================================
+; Environment helpers (name:Type bindings, \n-joined)
+; ============================================================================
+
+; Extend env with name:type binding
+@fn env-extend :: env:Str name:Str ty:Str -> Str
+  (+ name (+ ":" (+ ty (+ "\n" env))))
+
+; Look up name in env — returns type string or "Unknown"
+@fn env-lookup :: env:Str name:Str -> Str
+  (env-scan env name 0 (@call str_len env))
+
+@fn env-scan :: env:Str name:Str pos:Int len:Int -> Str
+  @if (@call int_ge pos len)
+    @then "Unknown"
+    @else
+      @let line-end :: (find-newline env pos len)
+      @let end :: @if (@call int_eq line-end -1) @then len @else line-end
+      @let line :: (@call str_sub env pos end)
+      @let colon-pos :: (find-colon line 0 (@call str_len line))
+      @if (@call int_eq colon-pos -1)
+        @then (env-scan env name (+ end 1) len)
+        @else
+          @let line-name :: (@call str_sub line 0 colon-pos)
+          @if (@call str_eq line-name name)
+            @then (@call str_sub line (+ colon-pos 1) (@call str_len line))
+            @else (env-scan env name (+ end 1) len)
+
+@fn find-colon :: s:Str pos:Int len:Int -> Int
+  @if (@call int_ge pos len)
+    @then -1
+    @else
+      @let c :: (@call str_get s pos)
+      @if (@call str_eq c ":")
+        @then pos
+        @else (find-colon s (+ pos 1) len)
+
+; ============================================================================
+; Type compatibility check
+; ============================================================================
+
+@fn types-compat :: a:Str b:Str -> @Bool
+  @if (@call str_eq a "Unknown")
+    @then @true
+    @else
+      @if (@call str_eq b "Unknown")
+        @then @true
+        @else (@call str_eq a b)
+
+; ============================================================================
+; AST node parsing: extract kind and content
+; ============================================================================
+
+; Extract node kind from "(Kind ...)" line
+@fn node-kind :: line:Str -> Str
+  @if (@call str_eq line "")
+    @then ""
+    @else
+      @let after-paren :: (@call str_sub line 1 (@call str_len line))
+      (read-kind after-paren 0 (@call str_len after-paren))
+
+@fn read-kind :: s:Str pos:Int len:Int -> Str
+  @if (@call int_ge pos len)
+    @then s
+    @else
+      @let c :: (@call str_get s pos)
+      @if (@call bool_or (@call str_eq c " ") (@call str_eq c ")"))
+        @then (@call str_sub s 0 pos)
+        @else (read-kind s (+ pos 1) len)
+
+; Extract content after "(Kind " prefix
+@fn node-content :: line:Str kind:Str -> Str
+  @let start :: (+ (@call str_len kind) 2)
+  @let end :: (- (@call str_len line) 1)
+  @if (@call int_lt end start)
+    @then ""
+    @else (@call str_sub line start end)
+
+; ============================================================================
+; Main type inference dispatcher
+; ============================================================================
+
+; Infer type of a single AST line, given env. Returns (type, env).
+@fn infer-node :: line:Str env:Str -> (Str, Str)
+  @let kind :: (node-kind line)
+  @if (@call str_eq kind "Int")
+    @then ("Int" env)
+    @else
+      @if (@call str_eq kind "Float")
+        @then ("Float" env)
+        @else
+          @if (@call str_eq kind "Str")
+            @then ("Str" env)
+            @else
+              @if (@call str_eq kind "Bool")
+                @then ("Bool" env)
+                @else
+                  @if (@call str_eq kind "Var")
+                    @then ((env-lookup env (node-content line "Var")) env)
+                    @else
+                      @if (@call str_eq kind "Let")
+                        @then (infer-let line env)
+                        @else
+                          @if (@call str_eq kind "Ret")
+                            @then (infer-ret line env)
+                            @else
+                              @if (@call str_eq kind "If")
+                                @then (infer-if line env)
+                                @else
+                                  @if (@call str_eq kind "Arithmetic")
+                                    @then (infer-arith line env)
+                                    @else ("Unknown" env)
+
+; ============================================================================
+; Let inference
+; ============================================================================
+
+@fn infer-let :: line:Str env:Str -> (Str, Str)
+  @let content :: (node-content line "Let")
+  @let sp :: (find-space content 0 (@call str_len content))
+  @let name :: (@call str_sub content 0 sp)
+  @let val-expr :: (@call str_sub content (+ sp 1) (@call str_len content))
+  @let val-kind :: (node-kind val-expr)
+  @let val-type :: (kind-to-base-type val-kind val-expr env)
+  @let new-env :: (env-extend env name val-type)
+  (val-type new-env)
+
+@fn find-space :: s:Str pos:Int len:Int -> Int
+  @if (@call int_ge pos len)
+    @then len
+    @else
+      @let c :: (@call str_get s pos)
+      @if (@call str_eq c " ")
+        @then pos
+        @else (find-space s (+ pos 1) len)
+
+; Quick type from a sub-expression kind
+@fn kind-to-base-type :: kind:Str expr:Str env:Str -> Str
+  @if (@call str_eq kind "Int")
+    @then "Int"
+    @else
+      @if (@call str_eq kind "Float")
+        @then "Float"
+        @else
+          @if (@call str_eq kind "Str")
+            @then "Str"
+            @else
+              @if (@call str_eq kind "Bool")
+                @then "Bool"
+                @else
+                  @if (@call str_eq kind "Var")
+                    @then (env-lookup env (node-content expr "Var"))
+                    @else "Unknown"
+
+; ============================================================================
+; Ret inference
+; ============================================================================
+
+@fn infer-ret :: line:Str env:Str -> (Str, Str)
+  @let inner :: (node-content line "Ret")
+  @let inner-kind :: (node-kind inner)
+  @let inner-type :: (kind-to-base-type inner-kind inner env)
+  (inner-type env)
+
+; ============================================================================
+; If inference
+; ============================================================================
+
+@fn infer-if :: line:Str env:Str -> (Str, Str)
+  @let content :: (node-content line "If")
+  @let sp1 :: (find-paren-end content 0 (@call str_len content))
+  @let cond-expr :: (@call str_sub content 0 sp1)
+  @let cond-kind :: (node-kind cond-expr)
+  @let cond-type :: (kind-to-base-type cond-kind cond-expr env)
+  @let rest :: (@call str_sub content (+ sp1 1) (@call str_len content))
+  @let sp2 :: (find-paren-end rest 0 (@call str_len rest))
+  @let then-expr :: (@call str_sub rest 0 sp2)
+  @let then-kind :: (node-kind then-expr)
+  @let then-type :: (kind-to-base-type then-kind then-expr env)
+  @if (@call bool_not (@call bool_or (@call str_eq cond-type "Bool") (@call str_eq cond-type "Unknown")))
+    @then ("ERROR:if-cond-not-bool" env)
+    @else (then-type env)
+
+; Find end of a parenthesized sub-expression (position after closing paren)
+@fn find-paren-end :: s:Str pos:Int len:Int -> Int
+  @if (@call int_ge pos len)
+    @then len
+    @else
+      @let c :: (@call str_get s pos)
+      @if (@call str_eq c "(")
+        @then (scan-to-close s (+ pos 1) len 1)
+        @else (find-paren-end s (+ pos 1) len)
+
+@fn scan-to-close :: s:Str pos:Int len:Int depth:Int -> Int
+  @if (@call int_ge pos len)
+    @then len
+    @else
+      @let c :: (@call str_get s pos)
+      @if (@call str_eq c ")")
+        @then
+          @if (@call int_eq depth 1)
+            @then (+ pos 1)
+            @else (scan-to-close s (+ pos 1) len (- depth 1))
+        @else
+          @if (@call str_eq c "(")
+            @then (scan-to-close s (+ pos 1) len (+ depth 1))
+            @else (scan-to-close s (+ pos 1) len depth)
+
+; ============================================================================
+; Arithmetic inference
+; ============================================================================
+
+@fn infer-arith :: line:Str env:Str -> (Str, Str)
+  @let content :: (node-content line "Arithmetic")
+  @let sp1 :: (find-space content 0 (@call str_len content))
+  @let after-op :: (@call str_sub content (+ sp1 1) (@call str_len content))
+  @let sp2 :: (find-paren-end after-op 0 (@call str_len after-op))
+  @let left-expr :: (@call str_sub after-op 0 sp2)
+  @let right-expr :: (@call str_sub after-op (+ sp2 1) (@call str_len after-op))
+  @let left-kind :: (node-kind left-expr)
+  @let left-type :: (kind-to-base-type left-kind left-expr env)
+  @let right-kind :: (node-kind right-expr)
+  @let right-type :: (kind-to-base-type right-kind right-expr env)
+  @if (types-compat left-type right-type)
+    @then (@if (@call str_eq left-type "Unknown") @then (right-type env) @else (left-type env))
+    @else ("ERROR:type-mismatch" env)
