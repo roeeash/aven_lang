@@ -1,0 +1,138 @@
+#!/usr/bin/env bash
+# bin/avencc — AVEN compiler driver
+# Usage: avencc <source.aven>
+#
+# Assembles the AVEN-written compiler from aven-core/, runs it on <source.aven>
+# via the seed interpreter, and provides stage-level failure diagnosis.
+# Writes a timestamped build log to logs/.
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+REPO_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
+
+# Locate aven binary: PATH first, then local release build
+if command -v aven >/dev/null 2>&1; then
+    AVEN="aven"
+elif [[ -x "${REPO_ROOT}/target/release/aven" ]]; then
+    AVEN="${REPO_ROOT}/target/release/aven"
+else
+    echo "ERROR: 'aven' binary not found on PATH and not at target/release/aven."
+    echo "       Run: cargo build --release"
+    exit 1
+fi
+
+if [[ $# -ne 1 ]]; then
+    echo "Usage: avencc <source.aven>"
+    exit 1
+fi
+
+SOURCE="$(cd "$(dirname "$1")" && pwd)/$(basename "$1")"
+if [[ ! -f "${SOURCE}" ]]; then
+    echo "ERROR: source file not found: ${SOURCE}"
+    exit 1
+fi
+
+# Log setup
+LOG_DIR="${REPO_ROOT}/logs"
+mkdir -p "${LOG_DIR}"
+TIMESTAMP="$(date '+%Y-%m-%d_%H-%M-%S')"
+LOG_FILE="${LOG_DIR}/build_${TIMESTAMP}.log"
+
+log() { echo "$*" | tee -a "${LOG_FILE}"; }
+
+log "========================================"
+log "avencc build — ${TIMESTAMP}"
+log "source : ${SOURCE}"
+log "aven   : ${AVEN}"
+log "log    : ${LOG_FILE}"
+log "========================================"
+
+# Assemble compiler bundle
+COMPILER_BUNDLE="/tmp/aven-compiler.aven"
+STAGES=(
+    lexer.aven
+    parser.aven
+    check.aven
+    module.aven
+    diff.aven
+    eval.aven
+    driver.aven
+    main.aven
+)
+
+log ""
+log "[assemble] Concatenating compiler stages..."
+: > "${COMPILER_BUNDLE}"
+
+for STAGE in "${STAGES[@]}"; do
+    STAGE_PATH="${REPO_ROOT}/aven-core/${STAGE}"
+    if [[ ! -f "${STAGE_PATH}" ]]; then
+        log "ERROR: missing stage file: ${STAGE_PATH}"
+        exit 1
+    fi
+    log "  + ${STAGE}"
+    cat "${STAGE_PATH}" >> "${COMPILER_BUNDLE}"
+done
+
+log "[assemble] Done → ${COMPILER_BUNDLE}"
+
+# Run full pipeline
+log ""
+log "[compile] Running pipeline on: ${SOURCE}"
+log ""
+
+PIPELINE_OUTPUT="$("${AVEN}" run "${COMPILER_BUNDLE}" "${SOURCE}" 2>&1)"
+PIPELINE_EXIT=$?
+
+echo "${PIPELINE_OUTPUT}" | tee -a "${LOG_FILE}"
+
+# aven run exits 0 even when the aven-core checker returns ERROR:type-mismatch —
+# the seed ran fine; it just printed an error string. Check both.
+if [[ ${PIPELINE_EXIT} -eq 0 ]] && ! echo "${PIPELINE_OUTPUT}" | grep -q '^ERROR:'; then
+    log ""
+    log "========================================"
+    log "VERDICT: PASS"
+    log "========================================"
+    exit 0
+fi
+
+# Stage diagnosis via seed-interpreter oracles
+log ""
+log "[diagnose] Pipeline failed — running stage oracles to identify cause..."
+
+FAILED_STAGE="unknown"
+
+log "[diagnose] lex   — aven emit-tokens"
+"${AVEN}" emit-tokens "${SOURCE}" >> "${LOG_FILE}" 2>&1
+if [[ $? -ne 0 ]]; then
+    FAILED_STAGE="lex"
+    log "[diagnose] FAILED at: lex"
+else
+    log "[diagnose] lex    OK"
+
+    log "[diagnose] parse  — aven emit-ast"
+    "${AVEN}" emit-ast "${SOURCE}" >> "${LOG_FILE}" 2>&1
+    if [[ $? -ne 0 ]]; then
+        FAILED_STAGE="parse"
+        log "[diagnose] FAILED at: parse"
+    else
+        log "[diagnose] parse  OK"
+
+        log "[diagnose] check  — aven verify"
+        VERIFY_OUT="$("${AVEN}" verify "${SOURCE}" 2>&1)"
+        echo "${VERIFY_OUT}" | tee -a "${LOG_FILE}"
+        if ! echo "${VERIFY_OUT}" | grep -q '"pass":true'; then
+            FAILED_STAGE="check"
+            log "[diagnose] FAILED at: check"
+        else
+            log "[diagnose] check  OK"
+            FAILED_STAGE="eval (all seed oracles passed — bug in aven-core evaluator)"
+            log "[diagnose] FAILED at: eval"
+        fi
+    fi
+fi
+
+log ""
+log "========================================"
+log "VERDICT: FAIL — stage: ${FAILED_STAGE}"
+log "========================================"
+exit 1

@@ -398,6 +398,7 @@ pub enum Type {
     TypeApp(String, Vec<Type>),  // Generic type application, e.g., Pair Int Str
     Uncertain(Box<Type>),  // Wraps a type with uncertainty flag for M3.3
     UnannotatedParam,      // Sentinel for unannotated function parameters (M2 TC-R04)
+    Tuple(Vec<Type>),      // Tuple type, e.g. (Str, Int)
 }
 
 impl Type {

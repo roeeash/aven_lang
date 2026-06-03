@@ -3200,6 +3200,31 @@ pub fn eval(expr: &Expr, env: &mut Env) -> Result<Value, EvalError> {
             for elem in elements {
                 vals.push(eval(elem, env)?);
             }
+            // AVEN call syntax: (fn-name arg1 arg2 ...) is a tuple whose first
+            // element is a function. Dispatch the call when that's the case.
+            if vals.len() >= 2 {
+                match vals[0].clone() {
+                    Value::Fn { params, body, closure_env: _ } => {
+                        let args = &vals[1..];
+                        if params.len() == args.len() {
+                            let mut call_env = Env::with_parent(env.clone());
+                            for ((param_name, _), arg_val) in params.iter().zip(args.iter()) {
+                                call_env.define(param_name.clone(), arg_val.clone());
+                            }
+                            return eval(&body, &mut call_env);
+                        }
+                        // Arity mismatch — fall through to tuple
+                    }
+                    Value::NativeFn { arity, func: native_func, .. } => {
+                        let args = &vals[1..];
+                        if args.len() == arity {
+                            return native_func(args);
+                        }
+                        // Arity mismatch — fall through to tuple
+                    }
+                    _ => {}
+                }
+            }
             Ok(Value::Tuple(vals))
         }
         Expr::Nil => Ok(Value::Nil),

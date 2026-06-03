@@ -29,6 +29,11 @@ fn main() {
         return run_emit_ast(&args);
     }
 
+    // Check for "run" subcommand: aven run <compiler.aven> <source.aven>
+    if args.len() >= 2 && args[1] == "run" {
+        return run_program(&args);
+    }
+
     // Run REPL
     run_repl();
 }
@@ -268,6 +273,73 @@ fn escape_json_string(s: &str) -> String {
         }
     }
     result
+}
+
+fn escape_aven_string(s: &str) -> String {
+    let mut out = String::with_capacity(s.len());
+    for c in s.chars() {
+        match c {
+            '\\' => out.push_str("\\\\"),
+            '"'  => out.push_str("\\\""),
+            '\n' => out.push_str("\\n"),
+            '\r' => out.push_str("\\r"),
+            '\t' => out.push_str("\\t"),
+            c    => out.push(c),
+        }
+    }
+    out
+}
+
+fn run_program(args: &[String]) {
+    if args.len() < 4 {
+        eprintln!("Usage: aven run <compiler.aven> <source.aven>");
+        std::process::exit(1);
+    }
+
+    let compiler_path = &args[2];
+    let source_path   = &args[3];
+
+    let compiler = match std::fs::read_to_string(compiler_path) {
+        Ok(s) => s,
+        Err(e) => {
+            eprintln!("Error reading compiler '{}': {}", compiler_path, e);
+            std::process::exit(1);
+        }
+    };
+
+    let source = match std::fs::read_to_string(source_path) {
+        Ok(s) => s,
+        Err(e) => {
+            eprintln!("Error reading source '{}': {}", source_path, e);
+            std::process::exit(1);
+        }
+    };
+
+    // Phase 1: evaluate the compiler bundle to load all @fn definitions into env
+    let mut env = aven_seed::Env::new();
+    if let Err(e) = aven_seed::run_str_with_env(&compiler, &mut env) {
+        eprintln!("ERROR loading compiler: {}", e);
+        std::process::exit(1);
+    }
+
+    // Phase 2: call (run "source") in that env
+    let escaped = escape_aven_string(&source);
+    let call_expr = format!("(run \"{}\")", escaped);
+
+    match aven_seed::run_str_with_env(&call_expr, &mut env) {
+        Ok(val) => {
+            let output = format!("{}", val);
+            println!("{}", output);
+            if output.starts_with("ERROR:") {
+                std::process::exit(1);
+            }
+            std::process::exit(0);
+        }
+        Err(e) => {
+            eprintln!("ERROR: {}", e);
+            std::process::exit(1);
+        }
+    }
 }
 
 fn run_emit_tokens(args: &[String]) {

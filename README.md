@@ -144,47 +144,19 @@ cargo test
 
 ## Compiling AVEN Programs
 
-The AVEN-written compiler lives in `aven-core/`. It is run by the seed interpreter (the Rust binary). All pipeline stages are concatenated and fed to `aven run`.
-
-### Run a program through the full pipeline
+The AVEN-written compiler lives in `aven-core/`. Use `bin/avencc` to compile and run any AVEN program through the full self-hosted pipeline:
 
 ```bash
-# Concatenate all compiler stages, then run main.aven on your source file
-cat aven-core/lexer.aven \
-    aven-core/parser.aven \
-    aven-core/check.aven \
-    aven-core/module.aven \
-    aven-core/diff.aven \
-    aven-core/eval.aven \
-    aven-core/driver.aven \
-    aven-core/main.aven > /tmp/aven-compiler.aven
+# Make executable once
+chmod +x bin/avencc
 
-aven run /tmp/aven-compiler.aven -- yourprogram.aven
+# Compile and run
+bin/avencc yourprogram.aven
 ```
 
-The pipeline is: **tokenize → parse → type-check → evaluate**. If type checking fails, an `ERROR:...` string is returned and evaluation is skipped.
+`avencc` assembles all 8 compiler stages (lex → parse → check → eval), runs them on your source file, streams each step to the console, and writes a timestamped build log to `logs/`. On failure it probes each stage with the seed interpreter as an oracle and reports exactly which phase (lex / parse / check / eval) failed.
 
-### Inspect intermediate stages
-
-```bash
-# Tokens only (lex stage)
-aven run /tmp/aven-compiler.aven -- --tokens yourprogram.aven
-
-# AST only (lex + parse)
-aven run /tmp/aven-compiler.aven -- --ast yourprogram.aven
-
-# Type-check only (lex + parse + check)
-aven run /tmp/aven-compiler.aven -- --check yourprogram.aven
-```
-
-### Apply an AST patch
-
-```bash
-# Apply a selector-addressed diff to an AST
-aven run /tmp/aven-compiler.aven -- --patch "fn square" "(FnDef cube ...)" yourprogram.aven
-```
-
-### Example
+### Example — success
 
 Given `hello.aven`:
 
@@ -193,10 +165,53 @@ Given `hello.aven`:
 (+ x 1)
 ```
 
-```bash
-$ aven run /tmp/aven-compiler.aven -- hello.aven
-43
 ```
+$ bin/avencc hello.aven
+========================================
+avencc build — 2026-06-03_10-00-00
+source : /path/to/hello.aven
+aven   : aven
+log    : logs/build_2026-06-03_10-00-00.log
+========================================
+
+[assemble] Concatenating compiler stages...
+  + lexer.aven
+  + parser.aven
+  + check.aven
+  + module.aven
+  + diff.aven
+  + eval.aven
+  + driver.aven
+  + main.aven
+[assemble] Done → /tmp/aven-compiler.aven
+
+[compile] Running pipeline on: /path/to/hello.aven
+
+43
+
+========================================
+VERDICT: PASS
+========================================
+```
+
+### Example — failure
+
+```
+$ bin/avencc bad.aven
+...
+ERROR:type-mismatch
+
+[diagnose] Pipeline failed — running stage oracles to identify cause...
+[diagnose] lex    OK
+[diagnose] parse  OK
+[diagnose] FAILED at: check
+
+========================================
+VERDICT: FAIL — stage: check
+========================================
+```
+
+Build logs are written to `logs/build_YYYY-MM-DD_HH-MM-SS.log` (gitignored).
 
 ---
 

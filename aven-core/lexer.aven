@@ -15,7 +15,7 @@
       @let (next_pos, tok_str) :: (skip-ws-and-comments source pos len)
       @if (@call str_eq tok_str "")
         @then (loop-tokens source next_pos len tokens)
-        @else (loop-tokens source next_pos len (+ tokens tok_str "\n"))
+        @else (loop-tokens source next_pos len (+ tokens (+ tok_str "\n")))
 
 @fn skip-ws-and-comments :: source:Str pos:Int len:Int -> (Int, Str)
   @if (@call int_ge pos len)
@@ -147,7 +147,7 @@
 @fn read-string :: source:Str pos:Int len:Int -> (Int, Str)
   @let content :: ""
   @let (next_pos, str_content) :: (read-string-loop source pos len content)
-  (next_pos, (+ "String \"" str_content "\""))
+  (next_pos, (+ "String \"" (+ str_content "\"")))
 
 @fn read-string-loop :: source:Str pos:Int len:Int content:Str -> (Int, Str)
   @if (@call int_ge pos len)
@@ -242,25 +242,25 @@
 @fn read-float :: source:Str pos:Int len:Int int_part:Str -> (Int, Str)
   @let (next_pos, frac_part) :: (read-number-digits source pos len)
   @if (@call int_ge next_pos len)
-    @then (next_pos, (+ "Float " int_part "." frac_part))
+    @then (next_pos, (+ "Float " (+ int_part (+ "." frac_part))))
     @else
       @let c :: (@call str_get source next_pos)
       @if (@call bool_or (@call str_eq c "e") (@call str_eq c "E"))
-        @then (read-exponent source (+ next_pos 1) len (+ int_part "." frac_part))
-        @else (next_pos, (+ "Float " int_part "." frac_part))
+        @then (read-exponent source (+ next_pos 1) len (+ int_part (+ "." frac_part)))
+        @else (next_pos, (+ "Float " (+ int_part (+ "." frac_part))))
 
 @fn read-exponent :: source:Str pos:Int len:Int mantissa:Str -> (Int, Str)
   @if (@call int_ge pos len)
-    @then (pos, (+ "Float " mantissa "e0"))
+    @then (pos, (+ "Float " (+ mantissa "e0")))
     @else
       @let c :: (@call str_get source pos)
       @if (@call bool_or (@call str_eq c "+") (@call str_eq c "-"))
-        @then (read-exp-digits source (+ pos 1) len (+ mantissa "e" c))
+        @then (read-exp-digits source (+ pos 1) len (+ mantissa (+ "e" c)))
         @else (read-exp-digits source pos len (+ mantissa "e"))
 
 @fn read-exp-digits :: source:Str pos:Int len:Int prefix:Str -> (Int, Str)
   @let (next_pos, exp_part) :: (read-number-digits source pos len)
-  (next_pos, (+ "Float " prefix exp_part))
+  (next_pos, (+ "Float " (+ prefix exp_part)))
 
 @fn read-number-digits :: source:Str pos:Int len:Int -> (Int, Str)
   @let digits :: ""

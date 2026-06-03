@@ -350,6 +350,10 @@ fn format_type_canonical(ty: &ast::Type) -> String {
         },
         ast::Type::Uncertain(inner) => format!("(Uncertain {})", format_type_canonical(inner)),
         ast::Type::UnannotatedParam => "UnannotatedParam".to_string(),
+        ast::Type::Tuple(types) => {
+            let inner: Vec<String> = types.iter().map(format_type_canonical).collect();
+            format!("({})", inner.join(", "))
+        }
     }
 }
 

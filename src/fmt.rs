@@ -138,6 +138,10 @@ pub fn format_type(ty: &Type) -> String {
             "<uncertain>".to_string()
         }
         Type::UnannotatedParam => "<unannotated>".to_string(),
+        Type::Tuple(types) => {
+            let inner: Vec<String> = types.iter().map(format_type).collect();
+            format!("({})", inner.join(", "))
+        }
     }
 }
 

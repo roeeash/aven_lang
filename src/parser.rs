@@ -911,6 +911,10 @@ impl Parser {
                         names.push(n.clone());
                         self.advance();
                     }
+                    Token::Underscore => {
+                        names.push("_".to_string());
+                        self.advance();
+                    }
                     _ => return Err(ParseError::UnexpectedToken(
                         format!("Expected identifier in tuple destructure, got {:?}", self.current())
                     )),
@@ -1052,7 +1056,8 @@ impl Parser {
                 Ok(Type::Option(Box::new(inner_type)))
             }
             Token::Ident(name) => {
-                let name_str = name.as_str();
+                // Strip leading @ from type-annotated identifiers (e.g. @Bool → Bool)
+                let name_str = if name.starts_with('@') { &name[1..] } else { name.as_str() };
                 // Check if this is a union variant (starts with #)
                 if name_str.starts_with('#') {
                     let tag = name_str[1..].to_string(); // Remove the # prefix
@@ -1193,43 +1198,56 @@ impl Parser {
                 Ok(Type::Record(fields))
             }
             Token::LeftParen => {
-                // Parse function type: (Type -> Type) or (Type arrow Type)
+                // Parse tuple type (TypeA, TypeB) or function type (Type -> RetType)
                 self.advance(); // consume (
                 let first_type = self.parse_type_expr()?;
 
-                // Check for effect arrow
-                let effect_set = match self.current() {
-                    Token::EffectArrow(es) => {
-                        let es_copy = es.clone();
-                        self.advance();
-                        es_copy
+                match self.current() {
+                    // Tuple type: (TypeA, TypeB, ...)
+                    Token::Comma | Token::RightParen => {
+                        let mut types = vec![first_type];
+                        while self.current() == Token::Comma {
+                            self.advance(); // consume ,
+                            if self.current() == Token::RightParen {
+                                break;
+                            }
+                            types.push(self.parse_type_expr()?);
+                        }
+                        self.expect(Token::RightParen)?;
+                        Ok(Type::Tuple(types))
                     }
-                    Token::Arrow => {
-                        self.advance();
-                        EffectSet { err: false, io: false, async_: false }
+                    // Function type: (Type -> RetType)
+                    Token::Arrow | Token::EffectArrow(_) => {
+                        let effect_set = match self.current() {
+                            Token::EffectArrow(es) => {
+                                let es_copy = es.clone();
+                                self.advance();
+                                es_copy
+                            }
+                            Token::Arrow => {
+                                self.advance();
+                                EffectSet { err: false, io: false, async_: false }
+                            }
+                            _ => unreachable!(),
+                        };
+                        let return_type = self.parse_type_expr()?;
+                        if self.current() != Token::RightParen {
+                            return Err(ParseError::InvalidSyntax(
+                                "Expected ) in function type expression".to_string()
+                            ));
+                        }
+                        self.advance(); // consume )
+                        Ok(Type::Fn {
+                            params: vec![first_type],
+                            return_type: Box::new(return_type),
+                            effect: effect_set,
+                            cap: None,
+                        })
                     }
-                    _ => {
-                        return Err(ParseError::InvalidSyntax(
-                            "Expected arrow in function type expression".to_string()
-                        ));
-                    }
-                };
-
-                let return_type = self.parse_type_expr()?;
-
-                if self.current() != Token::RightParen {
-                    return Err(ParseError::InvalidSyntax(
-                        "Expected ) in function type expression".to_string()
-                    ));
+                    _ => Err(ParseError::InvalidSyntax(
+                        "Expected , or -> in parenthesised type expression".to_string()
+                    )),
                 }
-                self.advance(); // consume )
-
-                Ok(Type::Fn {
-                    params: vec![first_type],
-                    return_type: Box::new(return_type),
-                    effect: effect_set,
-                    cap: None,
-                })
             }
             _ => Err(ParseError::InvalidSyntax("Expected type expression".to_string())),
         }
@@ -1330,7 +1348,7 @@ impl Parser {
         }
 
         self.push_scope(format!("fn {}", name));
-        let body = Box::new(self.parse_statement()?);
+        let body = Box::new(self.parse_expression()?);
         self.pop_scope();
         let end_span = if self.pos > 0 {
             self.tokens[self.pos - 1].1
@@ -1423,11 +1441,67 @@ impl Parser {
     }
 
     fn parse_expression(&mut self) -> Result<Expr, ParseError> {
-        // Allow @let in expression context (for inline bindings in tuples etc)
+        // @let chains with its continuation so the binding is in scope for the
+        // body. This handles multi-statement function bodies written as
+        // @let a :: v1 \n @let b :: v2 \n expr.
         if self.current() == Token::Let {
-            return self.parse_let();
+            let node_id = self.next_node_id();
+            let start_span = self.current_span();
+            let let_expr = self.parse_let()?;
+            if self.can_continue_expression() {
+                let body = self.parse_expression()?;
+                let end_span = if self.pos > 0 { self.tokens[self.pos - 1].1 } else { SourceSpan::zero() };
+                return Ok(Expr::Block(vec![let_expr, body], node_id, self.span_from(start_span, end_span)));
+            }
+            return Ok(let_expr);
         }
-        self.parse_if()
+        // Delegate other statement-starting keywords to their specific parsers
+        // so that function bodies can contain any valid statement.
+        match self.current() {
+            Token::Ret      => self.parse_ret(),
+            Token::IoWrite  => self.parse_io_write(),
+            Token::Intent   => self.parse_intent(),
+            Token::Match    => self.parse_match(),
+            Token::Ok       => self.parse_ok(),
+            Token::Err      => self.parse_err(),
+            Token::Diff | Token::Diffs => self.parse_diff(),
+            _               => self.parse_if(),
+        }
+    }
+
+    fn parse_fn_body(&mut self) -> Result<Expr, ParseError> {
+        let start_span = self.current_span();
+        let mut exprs = Vec::new();
+
+        // Collect all statements that belong to this function body.
+        // Stop at @fn, @type, or Eof — these begin sibling declarations.
+        while self.is_expression_start()
+            && !matches!(self.current(), Token::Fn | Token::Type | Token::Eof)
+        {
+            exprs.push(self.parse_statement()?);
+        }
+
+        if exprs.is_empty() {
+            Ok(Expr::Nil)
+        } else if exprs.len() == 1 {
+            Ok(exprs.into_iter().next().unwrap())
+        } else {
+            let end_span = if self.pos > 0 {
+                self.tokens[self.pos - 1].1
+            } else {
+                SourceSpan::zero()
+            };
+            Ok(Expr::Block(exprs, self.next_node_id(), self.span_from(start_span, end_span)))
+        }
+    }
+
+    fn can_continue_expression(&self) -> bool {
+        matches!(self.current(),
+            Token::Let | Token::If | Token::Ret |
+            Token::LeftParen | Token::True | Token::False |
+            Token::Integer(_) | Token::Float(_) | Token::String(_) |
+            Token::Ident(_)
+        )
     }
 
     fn parse_if(&mut self) -> Result<Expr, ParseError> {
@@ -1438,10 +1512,10 @@ impl Parser {
             let cond = Box::new(self.parse_comparison()?);
 
             self.expect(Token::Then)?;
-            let then_branch = Box::new(self.parse_comparison()?);
+            let then_branch = Box::new(self.parse_expression()?);
 
             self.expect(Token::Else)?;
-            let else_branch = Box::new(self.parse_comparison()?);
+            let else_branch = Box::new(self.parse_expression()?);
 
             let end_span = if self.pos > 0 {
                 self.tokens[self.pos - 1].1
