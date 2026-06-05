@@ -1,0 +1,33 @@
+#!/usr/bin/env bash
+# Runs all driver-fixture e2e tests inside the runtime container.
+# Usage: docker run --rm --entrypoint bash aven /app/bin/test-docker
+
+set -euo pipefail
+
+FIXTURES_DIR="/app/aven-core/tests/driver-fixtures"
+PASS=0
+FAIL=0
+
+for src in "${FIXTURES_DIR}"/*.aven; do
+    name="$(basename "${src}" .aven)"
+    expected_file="${FIXTURES_DIR}/${name}.output"
+    if [[ ! -f "${expected_file}" ]]; then
+        echo "SKIP ${name} (no .output file)"
+        continue
+    fi
+    expected="$(cat "${expected_file}")"
+
+    actual="$(avencc "${src}" 2>&1 | grep -E '^(ERROR:|[0-9])' | head -1 || true)"
+
+    if [[ "${actual}" == "${expected}" ]]; then
+        echo "PASS ${name}"
+        PASS=$((PASS + 1))
+    else
+        echo "FAIL ${name} — expected: '${expected}'  got: '${actual}'"
+        FAIL=$((FAIL + 1))
+    fi
+done
+
+echo ""
+echo "Results: ${PASS} passed, ${FAIL} failed"
+[[ ${FAIL} -eq 0 ]]
