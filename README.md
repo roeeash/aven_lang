@@ -119,6 +119,27 @@ cargo build --release
 # binary at: target/release/aven
 ```
 
+### Docker
+
+No local Rust installation needed — the image builds and packages everything.
+
+```bash
+docker build -t aven .
+
+# Interactive REPL
+docker run -it aven
+
+# Run a program (mount the directory containing your .aven file)
+docker run --rm -v $(pwd):/work aven run /work/myprogram.aven
+
+# Full avencc pipeline (host logs/ receives the build log)
+docker run --rm \
+  -v $(pwd):/work \
+  -v $(pwd)/logs:/app/logs \
+  --entrypoint avencc \
+  aven /work/myprogram.aven
+```
+
 ### REPL
 
 ```bash
