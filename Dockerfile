@@ -4,8 +4,9 @@ WORKDIR /build
 COPY Cargo.toml Cargo.lock ./
 COPY src/ src/
 COPY vendor/ vendor/
-# .cargo/config.toml tells cargo to use the vendored sources (no network needed)
-COPY .cargo/ .cargo/
+# Generate the vendor config inline — not committed to the repo so normal cargo
+# invocations outside Docker still use crates.io.
+RUN mkdir -p .cargo && printf '[source.crates-io]\nreplace-with = "vendored-sources"\n\n[source.vendored-sources]\ndirectory = "vendor"\n' > .cargo/config.toml
 RUN cargo build --release --offline
 
 # ── Stage 2: runtime ──────────────────────────────────────────────────────────
